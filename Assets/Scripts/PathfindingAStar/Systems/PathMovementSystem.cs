@@ -6,7 +6,7 @@ using Unity.Transforms;
 namespace PathfindingAStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(PathFoundStatusUpdateSystem))]
+    [UpdateAfter(typeof(PathFindingSystem))]
     [BurstCompile] 
     public partial struct PathMovementSystem : ISystem 
     {

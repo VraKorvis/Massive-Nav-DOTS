@@ -32,12 +32,14 @@ namespace Gameplay
             
             foreach (var instance in instances)
             {
-                var pos = random.NextFloat3(
-                    new float3(-config.SpawnRadius, 0, -config.SpawnRadius), 
-                    new float3(config.SpawnRadius, 0, config.SpawnRadius));
+                var offset = random.NextFloat3(
+                    new float3(-config.SpawnRadius, 1, -config.SpawnRadius), 
+                    new float3(config.SpawnRadius, 1, config.SpawnRadius));
         
-                SystemAPI.SetComponent(instance, LocalTransform.FromPosition(pos));
-                SystemAPI.SetComponent(instance, new MoveSettings { speed = random.NextFloat(0.1f, 5f) });
+                var finalPos = config.SpawnPosition + offset;
+                
+                SystemAPI.SetComponent(instance, LocalTransform.FromPosition(finalPos));
+                SystemAPI.SetComponent(instance, new MoveSettings { speed = random.NextFloat(1f, 5f) });
         
                 state.EntityManager.AddComponent<PathAgentStatusFindTag>(instance);
             }

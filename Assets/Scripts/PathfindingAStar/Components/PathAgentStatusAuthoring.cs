@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -46,6 +47,22 @@ public enum AgentStatus
     Done
 }
 
+public struct PathRequestMetadata : IComponentData
+{
+    public double RequestTime; 
+}
+
+public struct SortableRequest
+{
+    public Entity Entity;
+    public double RequestTime;
+}
+
+public struct RequestComparer : IComparer<SortableRequest>
+{
+    public int Compare(SortableRequest x, SortableRequest y) => x.RequestTime.CompareTo(y.RequestTime);
+}
+
 public class PathAgentStatusAuthoring : MonoBehaviour
 {
     public AgentStatus status;
@@ -72,6 +89,7 @@ public class PathAgentStatusBaker : Baker<PathAgentStatusAuthoring>
         if (authoring.status == AgentStatus.Find)
         {
             AddComponent(entity, new PathAgentStatusFindTag());
+            AddComponent(entity, new PathRequestMetadata());
         }
         else if (authoring.status == AgentStatus.None)
         {
