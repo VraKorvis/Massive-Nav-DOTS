@@ -6,28 +6,42 @@ namespace PathfindingAStar
     /// <summary>
     /// Change agent status -> process after finding path
     /// </summary>
-    [UpdateInGroup(typeof(LateSimulationSystemGroup))]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PathFindingSystem))]
-    [UpdateBefore(typeof(PathAgentStatusSystem))]
     [BurstCompile]
     public partial struct PathFoundStatusUpdateSystem : ISystem
     {
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
+        }
+
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            // ИСПРАВЛЕНО: убрали DynamicBuffer из Query
-            foreach (var (status, entity) in 
-                     SystemAPI.Query<RefRW<PathAgentStatus>>()
-                         .WithAll<PathAgentStatusFindTag>()
-                         .WithEntityAccess())
+            var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
+        
+            var job = new CheckPathReadyJob
             {
-                // Получаем буфер отдельно
-                var waypoints = SystemAPI.GetBuffer<Waypoint>(entity);
-                
-                // Если путь найден (есть waypoints), меняем статус на Process
+                Ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged)
+            };
+        
+            state.Dependency = job.Schedule(state.Dependency);
+        }
+
+        [BurstCompile]
+        [WithAll(typeof(PathAgentStatusFindTag))]
+        public partial struct CheckPathReadyJob : IJobEntity
+        {
+            public EntityCommandBuffer Ecb;
+
+            private void Execute(Entity entity, DynamicBuffer<Waypoint> waypoints, ref PathAgentStatus status)
+            {
                 if (waypoints.Length > 0)
                 {
-                    status.ValueRW.Value = AgentStatus.Process;
+                    status.Value = AgentStatus.Process;
+
+                    Ecb.RemoveComponent<PathAgentStatusFindTag>(entity);
                 }
             }
         }

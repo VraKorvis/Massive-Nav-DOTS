@@ -1,51 +1,47 @@
-namespace PathfindingAStar
-{
 using Unity.Burst;
 using Unity.Entities;
 
-[UpdateInGroup(typeof(LateSimulationSystemGroup))]
-[UpdateAfter(typeof(PathFindingSystem))]
-[UpdateBefore(typeof(PathMovementSystem))]
-[BurstCompile]
-public partial struct PathAgentStatusSystem : ISystem
+namespace PathfindingAStar
 {
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(PathRequestUpdateSystem))]
     [BurstCompile]
-    public void OnUpdate(ref SystemState state)
+    public partial struct PathAgentStatusSystem : ISystem
     {
-        var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
-
-        foreach (var (status, entity) in SystemAPI.Query<RefRO<PathAgentStatus>>().WithEntityAccess())
+        public void OnCreate(ref SystemState state)
         {
-            switch (status.ValueRO.Value)
-            {
-                case AgentStatus.Find:
-                    if (!SystemAPI.HasComponent<PathAgentStatusFindTag>(entity))
-                        ecb.AddComponent<PathAgentStatusFindTag>(entity);
-                    
-                    ecb.RemoveComponent<PathAgentStatusNoneTag>(entity);
-                    ecb.RemoveComponent<PathAgentStatusProcessTag>(entity);
-                    break;
-
-                case AgentStatus.Process:
-                    if (!SystemAPI.HasComponent<PathAgentStatusProcessTag>(entity))
-                        ecb.AddComponent<PathAgentStatusProcessTag>(entity);
-                    
-                    ecb.RemoveComponent<PathAgentStatusFindTag>(entity);
-                    break;
-
-                case AgentStatus.None:
-                    if (!SystemAPI.HasComponent<PathAgentStatusNoneTag>(entity))
-                        ecb.AddComponent<PathAgentStatusNoneTag>(entity);
-                    
-                    ecb.RemoveComponent<PathAgentStatusFindTag>(entity);
-                    ecb.RemoveComponent<PathAgentStatusProcessTag>(entity);
-                    break;
-                    
-            }
+            state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
         }
 
-        ecb.Playback(state.EntityManager);
-        ecb.Dispose();
+        [BurstCompile]
+        public void OnUpdate(ref SystemState state)
+        {
+            var ecb = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
+                .CreateCommandBuffer(state.WorldUnmanaged);
+            
+            foreach (var (status, entity) in SystemAPI.Query<RefRO<PathAgentStatus>>()
+                         .WithChangeFilter<PathAgentStatus>()
+                         .WithEntityAccess())
+            {
+                switch (status.ValueRO.Value)
+                {
+                    case AgentStatus.Find:
+                        ecb.AddComponent<PathAgentStatusFindTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusProcessTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusNoneTag>(entity);
+                        break;
+                    case AgentStatus.Process:
+                        ecb.AddComponent<PathAgentStatusProcessTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusFindTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusNoneTag>(entity);
+                        break;
+                    case AgentStatus.None:
+                        ecb.AddComponent<PathAgentStatusNoneTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusFindTag>(entity);
+                        ecb.RemoveComponent<PathAgentStatusProcessTag>(entity);
+                        break;
+                }
+            }
+        }
     }
-}
 }

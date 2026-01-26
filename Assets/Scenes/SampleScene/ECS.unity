@@ -133,7 +133,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &89067864
 Transform:
@@ -345,7 +345,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Gameplay.EnemySpawnerAuthoring
   enemyPrefab: {fileID: 7776669414997901617, guid: b6b8398efcdd64bc7a59f02debc3c10b, type: 3}
-  count: 100
+  count: 1000
   spawnRadius: 20
 --- !u!4 &617737242
 Transform:
@@ -356,7 +356,7 @@ Transform:
   m_GameObject: {fileID: 617737240}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: -0, z: -0, w: 1}
-  m_LocalPosition: {x: 4.3, y: 0, z: 13.3}
+  m_LocalPosition: {x: 5.1, y: 0, z: 13.3}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -413,7 +413,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &758723494
 Transform:
@@ -537,7 +537,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &1020853050
 Transform:
@@ -661,7 +661,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &1052489042
 Transform:
@@ -777,9 +777,9 @@ GameObject:
   m_Component:
   - component: {fileID: 1293934308}
   - component: {fileID: 1293934307}
-  - component: {fileID: 1293934309}
   - component: {fileID: 1293934306}
   - component: {fileID: 1293934305}
+  - component: {fileID: 1293934309}
   m_Layer: 0
   m_Name: Target
   m_TagString: Untagged
@@ -873,7 +873,7 @@ Transform:
   m_GameObject: {fileID: 1293934304}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -36.9, y: 1, z: -31.7}
+  m_LocalPosition: {x: 36.6, y: 1, z: -36}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -888,9 +888,9 @@ MonoBehaviour:
   m_GameObject: {fileID: 1293934304}
   m_Enabled: 1
   m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: 23634c0ac42f4df89845e3eb88b3fc35, type: 3}
+  m_Script: {fileID: 11500000, guid: 48c1087c8d6d466182a315d7b021102a, type: 3}
   m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::PathfindingAStar.TargetAuthoring
+  m_EditorClassIdentifier: Assembly-CSharp::PathfindingAStar.PathTargetAuthoring
 --- !u!1 &1318126199
 GameObject:
   m_ObjectHideFlags: 0
@@ -909,7 +909,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &1318126200
 Transform:
@@ -1033,7 +1033,7 @@ GameObject:
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
-  m_StaticEditorFlags: 0
+  m_StaticEditorFlags: 2147483647
   m_IsActive: 1
 --- !u!4 &2047103955
 Transform:

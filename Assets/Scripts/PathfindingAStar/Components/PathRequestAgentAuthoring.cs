@@ -7,6 +7,7 @@ public struct PathRequestAgent : IComponentData {
     public Entity owner;
     public int2 startCoord;
     public int2 destination;
+    public float NextAllowedUpdateTime;
 }
 
 // public class PathRequestAgentAuthoring : MonoBehaviour {

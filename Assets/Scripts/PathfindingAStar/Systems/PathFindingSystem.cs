@@ -1,14 +1,14 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
-using UnityEngine;
 
 namespace PathfindingAStar
 {
-    [UpdateInGroup(typeof(LateSimulationSystemGroup))]
-    [UpdateBefore(typeof(PathMovementSystem))]
+    [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateAfter(typeof(PathAgentStatusSystem))]
     [BurstCompile]
     public partial struct PathFindingSystem : ISystem
     {
@@ -80,20 +80,23 @@ namespace PathfindingAStar
 
             int dimX = settings.Dimensions.x;
             int dimY = settings.Dimensions.y;
-            CheckAndResizeBuffers(dimX * dimY);
-
             int count = _pathRequestQuery.CalculateEntityCount();
+
+            CheckAndResizeBuffers(dimX * dimY, count);
+
             if (count == 0) return;
 
             var pathArray = new NativeArray<PathRequestAgent>(count, Allocator.TempJob);
 
-            // ШАГ 1: Запускаем сбор данных с правильной зависимостью
             var collectHandle = new CollectPathsJob
             {
                 PathArray = pathArray
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
 
-            // ШАГ 2: Передаем collectHandle как зависимость в следующее задание
+            var query = SystemAPI.QueryBuilder().WithAll<PathAgentStatusFindTag>().Build();
+            int searchingNow = query.CalculateEntityCount();
+            // UnityEngine.Debug.Log($"[PERF] Агентов ищут путь в этом кадре: {searchingNow}");   
+            
             var findHandle = new FindPathAStarJob
             {
                 dimX = dimX,
@@ -105,12 +108,10 @@ namespace PathfindingAStar
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
                 neighbours = _neighbours
-            }.Schedule(WorkerCount, InnerLoopBatchSize, collectHandle);
+            }.Schedule(pathArray.Length, 1, collectHandle);
 
-            // ШАГ 3: КРИТИЧЕСКИ ВАЖНО - назначаем зависимость до завершения метода
             state.Dependency = findHandle;
 
-            // ШАГ 4: Массив удалится после выполнения всех заданий
             pathArray.Dispose(findHandle);
         }
 
@@ -124,20 +125,20 @@ namespace PathfindingAStar
         }
 
         [BurstCompile]
-        private void CheckAndResizeBuffers(int newSize)
+        private void CheckAndResizeBuffers(int newSize, int agentCount)
         {
-            if (_currentBufferSize == newSize && _costSoFar.IsCreated) return;
-
+            int requiredSize = newSize * agentCount;
+            if (_currentBufferSize == requiredSize && _costSoFar.IsCreated) return;
+            
             if (_costSoFar.IsCreated) _costSoFar.Dispose();
             if (_cameFrom.IsCreated) _cameFrom.Dispose();
             if (_openSet.IsCreated) _openSet.Dispose();
 
-            _costSoFar = new NativeArray<float>(newSize * WorkerCount, Allocator.Persistent);
-            _cameFrom = new NativeArray<int2>(newSize * WorkerCount, Allocator.Persistent);
+            _costSoFar = new NativeArray<float>(requiredSize, Allocator.Persistent);
+            _cameFrom = new NativeArray<int2>(requiredSize, Allocator.Persistent);
 
             // int openSetSize = (IterationLimit + 1) * NeighborCount * WorkerCount;
-            int openSetSize = newSize * WorkerCount;
-            _openSet = new NativeMinHeap(openSetSize, Allocator.Persistent);
+            _openSet = new NativeMinHeap(requiredSize, Allocator.Persistent);
 
             _currentBufferSize = newSize;
         }
@@ -161,7 +162,6 @@ namespace PathfindingAStar
 
             [ReadOnly] public DynamicBuffer<GridBuffer> grid;
 
-            // КРИТИЧЕСКОЕ ИЗМЕНЕНИЕ: добавлен атрибут для параллельной записи
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
 
             [ReadOnly] public NativeArray<PathRequestAgent> pathList;
@@ -177,28 +177,31 @@ namespace PathfindingAStar
             public void Execute(int index)
             {
                 var size = dimX * dimY;
+                
                 var costSoFarSlice = CostSoFar.Slice(index * size, size);
                 var cameFromSlice = CameFrom.Slice(index * size, size);
                 var openSetSize = (IterationLimit + 1) * NeighborCount;
                 // var openSetSlice = OpenSet.Slice(index * openSetSize, openSetSize);
                 var openSetSlice = OpenSet.Slice(index * size, size);
 
-                var pathReqInd = index;
+                // var pathReqInd = index;
 
-                while (pathList.Length > pathReqInd)
-                {
-                    var request = pathList[pathReqInd];
-                    pathReqInd += WorkerCount;
+                // while (pathList.Length > pathReqInd)
+                // {
+                    var request = pathList[index];
+                    // pathReqInd += WorkerCount;
 
                     // Очищаем буферы для нового поиска пути
-                    for (int i = 0; i < costSoFarSlice.Length; i++)
-                    {
-                        costSoFarSlice[i] = 0f;
-                    }
+                    // for (int i = 0; i < costSoFarSlice.Length; i++)
+                    // {
+                    //     costSoFarSlice[i] = 0f;
+                    // }
 
+                    UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
+                    UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
                     openSetSlice.Clear();
-
-                    if (request.owner == Entity.Null) continue;
+                    
+                    if (request.owner == Entity.Null) return;
 
                     var waypoints = WaypointsLookup[request.owner];
                     waypoints.Clear();
@@ -219,7 +222,7 @@ namespace PathfindingAStar
                         BuildPath(ref box);
                         
                     }
-                }
+                // }
             }
 
             private struct BoxData

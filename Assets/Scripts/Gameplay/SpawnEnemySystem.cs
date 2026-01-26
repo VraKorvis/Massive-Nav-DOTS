@@ -22,6 +22,12 @@ namespace Gameplay
             var config = SystemAPI.GetComponent<SpawnerConfig>(spawnerEntity);
             
             var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.Temp);
+            
+            for (int i = 0; i < instances.Length; i++)
+            {
+                state.EntityManager.SetName(instances[i], $"Agent_{i}");
+            }
+            
             var random = new Random(123);
             
             foreach (var instance in instances)
@@ -35,6 +41,7 @@ namespace Gameplay
         
                 state.EntityManager.AddComponent<PathAgentStatusFindTag>(instance);
             }
+            state.Enabled = false;
             
         }
     }
