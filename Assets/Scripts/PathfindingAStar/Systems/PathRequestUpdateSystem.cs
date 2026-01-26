@@ -13,6 +13,7 @@ namespace PathfindingAStar
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<PathTargetData>();
             _playerQuery = state.GetEntityQuery(ComponentType.ReadOnly<PathTargetData>());
@@ -29,6 +30,8 @@ namespace PathfindingAStar
             var targetData = SystemAPI.GetSingleton<PathTargetData>();
 
             double currentTime = state.WorldUnmanaged.Time.ElapsedTime;
+            var ecb = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
+                .CreateCommandBuffer(state.WorldUnmanaged);
             
             int requestsCount = 0;
             const int maxRequestsPerFrame = 32;
@@ -49,13 +52,16 @@ namespace PathfindingAStar
                     request.ValueRW.focus = targetEntity;
                     request.ValueRW.destination = targetData.CurrentCell;
                     request.ValueRW.startCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, gridSettings.Origin);
-            
+
                     var seed = (uint)(entity.Index + (uint)(currentTime * 1000));
                     var random = new Random(seed == 0 ? 1 : seed);
                     request.ValueRW.NextAllowedUpdateTime = (float)currentTime + 0.5f + random.NextFloat(0.0f, 1.0f);
-            
+
                     status.ValueRW.Value = AgentStatus.Find;
                     requestsCount++; 
+
+                    ecb.AddComponent<PathAgentStatusFindTag>(entity); 
+                    ecb.SetComponent(entity, new PathRequestMetadata { RequestTime = currentTime });
                 }
             }
         }

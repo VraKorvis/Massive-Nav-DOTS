@@ -21,14 +21,15 @@ namespace PathfindingAStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 1000;
+        private const int IterationLimit = 5000;
         private const int InnerLoopBatchSize = 1;
         
         private const int MaxPossibleAgents = 1001;
-        const int MaxPerFrame = 16; 
+        const int MaxPerFrame = 64; 
         
         private int _currentBufferSize;
 
+        private ComponentLookup<PathRequestAgent> _pathRequestLookup;
         private BufferLookup<GridBuffer> _gridBufferLookup;
         private BufferLookup<Waypoint> _waypointLookup;
 
@@ -37,11 +38,11 @@ namespace PathfindingAStar
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
-            _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<PathRequestAgent>()
-                .WithAll<PathRequestMetadata>()
-                .WithAll<PathAgentStatusFindTag>()
-                .Build(ref state);
+            _pathRequestQuery = state.GetEntityQuery(
+                ComponentType.ReadWrite<PathRequestAgent>(),
+                ComponentType.ReadWrite<PathRequestMetadata>(),
+                ComponentType.ReadOnly<PathAgentStatusFindTag>()
+            );
 
             _gridQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<GridBuffer, GridTag>()
@@ -62,6 +63,7 @@ namespace PathfindingAStar
                 [7] = new int2(-1, -1)
             };
 
+            _pathRequestLookup = state.GetComponentLookup<PathRequestAgent>(true);
             _gridBufferLookup = state.GetBufferLookup<GridBuffer>(true);
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
             
@@ -95,35 +97,46 @@ namespace PathfindingAStar
 
             if (!_costSoFar.IsCreated) return;
             
-            // var query = SystemAPI.QueryBuilder().WithAll<PathRequestAgent, PathRequestMetadata, PathAgentStatusFindTag>().Build();
-            // var entities = query.ToEntityArray(Allocator.TempJob);
-            // var metadata = query.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
-            //
-            // if (entities.Length == 0) return;
-            //
-            // var sortableList = new NativeList<SortableRequest>(entities.Length, Allocator.TempJob);
-            // for (int i = 0; i < entities.Length; i++)
-            // {
-            //     sortableList.Add(new SortableRequest { Entity = entities[i], RequestTime = metadata[i].RequestTime });
-            // }
-            // sortableList.Sort(new RequestComparer());
-            // int agentsToProcess = math.min(sortableList.Length, MaxPerFrame);
-            int count = _pathRequestQuery.CalculateEntityCount();
+            int totalWaiting = _pathRequestQuery.CalculateEntityCount();
+            if (totalWaiting == 0) return;
             
-            if (count == 0) return;
-            int agentsToProcess = math.min(count, MaxPerFrame);
-    
+            var entities = _pathRequestQuery.ToEntityArray(Allocator.TempJob);
+            var metadata = _pathRequestQuery.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
+            
+            if (entities.Length == 0) return;
+            
+            var sortableList = new NativeList<SortableRequest>(entities.Length, Allocator.TempJob);
+            for (int i = 0; i < entities.Length; i++)
+            {
+                sortableList.Add(new SortableRequest { Entity = entities[i], RequestTime = metadata[i].RequestTime });
+            }
+            sortableList.Sort(new RequestComparer());
+            
+            int agentsToProcess = math.min(totalWaiting, MaxPerFrame);
+            var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PathRequestAgent>(agentsToProcess, Allocator.TempJob);
+
+            for (int i = 0; i < agentsToProcess; i++)
+            {
+                processingEntities[i] = sortableList[i].Entity;
+            }
+
+            entities.Dispose();
+            metadata.Dispose();
+            sortableList.Dispose();
 
             var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
             var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
+            var parallelEcb = ecb.AsParallelWriter();
+            _pathRequestLookup.Update(ref state);
             
-            var collectHandle = new CollectPathsJob
+            var collectHandle = new CollectSortedPathsJob
             {
+                EntitiesToProcess = processingEntities,
+                PathRequestLookup = _pathRequestLookup,
                 PathArray = pathArray,
-                ECB = ecb.AsParallelWriter(),
-                Limit = agentsToProcess
-            }.ScheduleParallel(_pathRequestQuery, state.Dependency);
+                ECB = parallelEcb
+            }.Schedule(agentsToProcess, 64, state.Dependency);
             
             var findHandle = new FindPathAStarJob
             {
@@ -136,12 +149,14 @@ namespace PathfindingAStar
                 CostSoFar = _costSoFar,
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
-                neighbours = _neighbours
+                neighbours = _neighbours,
+                ECB = parallelEcb
             }.Schedule(agentsToProcess, InnerLoopBatchSize, collectHandle);
 
             state.Dependency = findHandle;
             
-            pathArray.Dispose(findHandle);
+            processingEntities.Dispose(state.Dependency);
+            pathArray.Dispose(state.Dependency);
         }
 
         [BurstCompile]
@@ -154,21 +169,23 @@ namespace PathfindingAStar
         }
 
         [BurstCompile]
-        public partial struct CollectPathsJob : IJobEntity
+        private struct CollectSortedPathsJob : IJobParallelFor
         {
+            [ReadOnly] public NativeArray<Entity> EntitiesToProcess;
+            [ReadOnly] public ComponentLookup<PathRequestAgent> PathRequestLookup;
+    
             [WriteOnly] public NativeArray<PathRequestAgent> PathArray;
             public EntityCommandBuffer.ParallelWriter ECB;
-            public int Limit;
             
-            private void Execute(Entity entity, [EntityIndexInQuery] int entityInQueryIndex, in PathRequestAgent path)
+            public void Execute(int index)
             {
-                if (entityInQueryIndex >= Limit) return;
+                Entity entity = EntitiesToProcess[index];
+                PathRequestAgent path = PathRequestLookup[entity];
 
-                PathArray[entityInQueryIndex] = path;
-        
-                ECB.RemoveComponent<PathAgentStatusFindTag>(entityInQueryIndex, entity);
-                
-                ECB.SetComponent(entityInQueryIndex, entity, new PathAgentStatus { Value = AgentStatus.Process });
+                PathArray[index] = path;
+
+                ECB.RemoveComponent<PathAgentStatusFindTag>(index, entity);
+                ECB.SetComponent(index, entity, new PathAgentStatus { Value = AgentStatus.Process });
                 
             }
         }
@@ -179,6 +196,8 @@ namespace PathfindingAStar
             public int dimX;
             public int dimY;
             public int gridStride;
+            
+            public EntityCommandBuffer.ParallelWriter ECB;
             
             [ReadOnly] public DynamicBuffer<GridBuffer> grid;
 
@@ -223,9 +242,15 @@ namespace PathfindingAStar
                     openSet = openSetSlice
                 };
 
+
                 if (FindPath(ref box))
                 {
                     BuildPath(ref box);
+                }
+                else 
+                {
+                    ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
+                    ECB.RemoveComponent<PathAgentStatusFindTag>(index, request.owner);
                 }
                 
             }
