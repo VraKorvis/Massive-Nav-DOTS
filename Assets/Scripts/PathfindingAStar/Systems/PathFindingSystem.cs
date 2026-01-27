@@ -8,7 +8,7 @@ using Unity.Mathematics;
 namespace PathfindingAStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [UpdateAfter(typeof(PathAgentStatusSystem))]
+    [UpdateAfter(typeof(PathRequestUpdateSystem))]
     [BurstCompile]
     public partial struct PathFindingSystem : ISystem
     {
@@ -24,7 +24,7 @@ namespace PathfindingAStar
         private const int IterationLimit = 5000;
         private const int InnerLoopBatchSize = 1;
         
-        private const int MaxPossibleAgents = 1001;
+        private const int MaxPossibleAgents = 1000;
         const int MaxPerFrame = 64; 
         
         private int _currentBufferSize;
@@ -38,11 +38,12 @@ namespace PathfindingAStar
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
-            _pathRequestQuery = state.GetEntityQuery(
-                ComponentType.ReadWrite<PathRequestAgent>(),
-                ComponentType.ReadWrite<PathRequestMetadata>(),
-                ComponentType.ReadOnly<PathAgentStatusFindTag>()
-            );
+            
+            _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAllRW<PathRequestAgent>()      
+                .WithAllRW<PathRequestMetadata>()   
+                .WithAll<PathAgentStatusFindTag>()  
+                .Build(ref state);
 
             _gridQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<GridBuffer, GridTag>()
@@ -183,8 +184,9 @@ namespace PathfindingAStar
                 PathRequestAgent path = PathRequestLookup[entity];
 
                 PathArray[index] = path;
-
-                ECB.RemoveComponent<PathAgentStatusFindTag>(index, entity);
+                
+                ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, entity, false);
+                ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, entity, true);
                 ECB.SetComponent(index, entity, new PathAgentStatus { Value = AgentStatus.Process });
                 
             }
@@ -250,7 +252,11 @@ namespace PathfindingAStar
                 else 
                 {
                     ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
-                    ECB.RemoveComponent<PathAgentStatusFindTag>(index, request.owner);
+    
+                    ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, request.owner, false);
+                    ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, request.owner, false);
+    
+                    ECB.SetComponentEnabled<PathAgentStatusNoneTag>(index, request.owner, true);
                 }
                 
             }

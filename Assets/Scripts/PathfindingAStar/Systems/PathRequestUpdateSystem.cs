@@ -1,4 +1,6 @@
 using Unity.Burst;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe; 
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -7,62 +9,113 @@ namespace PathfindingAStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [BurstCompile]
-    public partial struct PathRequestUpdateSystem : ISystem
+    public unsafe partial struct PathRequestUpdateSystem : ISystem
     {
-        private EntityQuery _playerQuery;
+        private const int MaxRequestsPerFrame = 32;
+        private NativeArray<int> _requestsCounter;
 
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<PathTargetData>();
-            _playerQuery = state.GetEntityQuery(ComponentType.ReadOnly<PathTargetData>());
-            _playerQuery.SetChangedVersionFilter(ComponentType.ReadOnly<PathTargetData>());
+
+            _requestsCounter = new NativeArray<int>(1, Allocator.Persistent);
+        }
+
+        public void OnDestroy(ref SystemState state)
+        {
+            _requestsCounter.Dispose();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            if (_playerQuery.IsEmpty) return;
+            _requestsCounter[0] = 0;
 
-            var gridSettings = SystemAPI.GetSingleton<GridSettings>();
-            var targetEntity = _playerQuery.GetSingletonEntity();
-            var targetData = SystemAPI.GetSingleton<PathTargetData>();
+            var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
 
-            double currentTime = state.WorldUnmanaged.Time.ElapsedTime;
-            var ecb = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged);
-            
-            int requestsCount = 0;
-            const int maxRequestsPerFrame = 32;
-            
-            foreach (var (transform, request, status, entity) in 
-                     SystemAPI.Query<RefRO<LocalTransform>, RefRW<PathRequestAgent>, RefRW<PathAgentStatus>>()
-                         .WithNone<PathAgentStatusFindTag>()
-                         .WithEntityAccess())
+            var job = new PathRequestStatusJob
             {
-                if (requestsCount >= maxRequestsPerFrame) break; 
+                TargetDataLookup = SystemAPI.GetComponentLookup<PathTargetData>(true),
+                TargetChangedLookup = SystemAPI.GetComponentLookup<TargetChangedTag>(true),
+                NoneTagLookup = SystemAPI.GetComponentLookup<PathAgentStatusNoneTag>(true),
+                SignificantMoveLookup = SystemAPI.GetComponentLookup<PathAgentStatusSignificantMoveTag>(true),
 
-                if (currentTime < request.ValueRO.NextAllowedUpdateTime) continue;
+                GridOrigin = SystemAPI.GetSingleton<GridSettings>().Origin,
+                CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
+                MaxRequests = MaxRequestsPerFrame,
 
-                bool significantMove = !request.ValueRO.destination.Equals(targetData.LastSignificantCell);
-        
-                if (significantMove)
+                Counter = _requestsCounter,
+                ECB = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged).AsParallelWriter()
+            };
+
+            state.Dependency = job.ScheduleParallel(state.Dependency);
+        }
+
+        [WithAny(typeof(PathAgentStatusNoneTag), typeof(PathAgentStatusSignificantMoveTag), typeof(TargetChangedTag))]
+        [BurstCompile]
+        public partial struct PathRequestStatusJob : IJobEntity
+        {
+            [ReadOnly] public ComponentLookup<PathTargetData> TargetDataLookup;
+            [ReadOnly] public ComponentLookup<TargetChangedTag> TargetChangedLookup;
+            [ReadOnly] public ComponentLookup<PathAgentStatusNoneTag> NoneTagLookup;
+            [ReadOnly] public ComponentLookup<PathAgentStatusSignificantMoveTag> SignificantMoveLookup;
+            public float3 GridOrigin;
+            public float CurrentTime;
+            public int MaxRequests;
+
+            public NativeArray<int> Counter;
+            public EntityCommandBuffer.ParallelWriter ECB;
+
+            void Execute(Entity entity, [ChunkIndexInQuery] int chunkIndex,
+                RefRO<LocalTransform> transform,
+                RefRW<PathRequestAgent> request,
+                RefRW<PathAgentStatus> status)
+            {
+                Entity myTarget = request.ValueRO.focus;
+                if (!TargetDataLookup.HasComponent(myTarget)) return;
+
+                int2 actualTargetCell = TargetDataLookup[myTarget].CurrentCell;
+
+                bool isIdle = NoneTagLookup.IsComponentEnabled(entity);
+                bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
+                bool isUrgent = SignificantMoveLookup.IsComponentEnabled(entity);
+                bool isSignificant = SignificantMoveLookup.IsComponentEnabled(entity);
+                
+                bool cooldownOver = CurrentTime >= request.ValueRO.NextAllowedUpdateTime;
+                
+                bool needsUpdate = targetMoved || isUrgent || (isIdle && cooldownOver);
+                
+                if (!needsUpdate) return;
+                
+                if (request.ValueRO.destination.Equals(actualTargetCell))
                 {
-                    request.ValueRW.focus = targetEntity;
-                    request.ValueRW.destination = targetData.CurrentCell;
-                    request.ValueRW.startCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, gridSettings.Origin);
-
-                    var seed = (uint)(entity.Index + (uint)(currentTime * 1000));
-                    var random = new Random(seed == 0 ? 1 : seed);
-                    request.ValueRW.NextAllowedUpdateTime = (float)currentTime + 0.5f + random.NextFloat(0.0f, 1.0f);
-
-                    status.ValueRW.Value = AgentStatus.Find;
-                    requestsCount++; 
-
-                    ecb.AddComponent<PathAgentStatusFindTag>(entity); 
-                    ecb.SetComponent(entity, new PathRequestMetadata { RequestTime = currentTime });
+                    ECB.SetComponentEnabled<PathAgentStatusSignificantMoveTag>(chunkIndex, entity, false);
+                    return;
                 }
+
+                if (!isSignificant && CurrentTime < request.ValueRO.NextAllowedUpdateTime) return;
+
+                int* ptr = (int*)Counter.GetUnsafePtr();
+                int currentRequestIndex = System.Threading.Interlocked.Increment(ref ptr[0]);
+
+                if (currentRequestIndex > MaxRequests) return;
+                
+                request.ValueRW.destination = TargetDataLookup[myTarget].CurrentCell;
+                request.ValueRW.startCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, GridOrigin);
+
+                var random = new Random((uint)(entity.Index + (uint)(CurrentTime * 1000)) + 1);
+                request.ValueRW.NextAllowedUpdateTime = CurrentTime + 0.5f + random.NextFloat(0.0f, 1.0f);
+
+                status.ValueRW.Value = AgentStatus.Find;
+
+                ECB.SetComponentEnabled<PathAgentStatusFindTag>(chunkIndex, entity, true);
+                ECB.SetComponentEnabled<PathAgentStatusNoneTag>(chunkIndex, entity, false);
+                ECB.SetComponentEnabled<PathAgentStatusProcessTag>(chunkIndex, entity, false);
+
+                ECB.SetComponentEnabled<PathAgentStatusSignificantMoveTag>(chunkIndex, entity, false);
+                
             }
         }
     }

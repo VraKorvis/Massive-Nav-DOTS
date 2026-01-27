@@ -4,6 +4,7 @@ using UnityEngine;
 
 namespace PathfindingAStar
 {
+    public struct TargetChangedTag : IComponentData, IEnableableComponent {}
     
     public struct PathTargetData : IComponentData
     {
@@ -23,6 +24,9 @@ namespace PathfindingAStar
             { 
                 CurrentCell = new int2(int.MinValue) 
             });
+            
+            AddComponent(entity, new TargetChangedTag());
+            SetComponentEnabled<TargetChangedTag>(entity,true);
         }
     }
 }

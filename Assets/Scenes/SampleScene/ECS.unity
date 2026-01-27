@@ -348,7 +348,7 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Gameplay.EnemySpawnerAuthoring
   enemyPrefab: {fileID: 7776669414997901617, guid: b6b8398efcdd64bc7a59f02debc3c10b, type: 3}
-  count: 500
+  count: 1000
   spawnRadius: 15
 --- !u!4 &617737242
 Transform:
@@ -1000,7 +1000,7 @@ Transform:
   m_GameObject: {fileID: 1293934304}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: -0.6, y: 1, z: 30.6}
+  m_LocalPosition: {x: 7, y: 1, z: -32.3}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []

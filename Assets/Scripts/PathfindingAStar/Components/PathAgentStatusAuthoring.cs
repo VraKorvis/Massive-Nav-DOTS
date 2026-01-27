@@ -15,23 +15,17 @@ public struct PathAgentStatus : IComponentData
     public AgentStatus Value;
 }
 
-public struct PathAgentStatusFindTag : IComponentData
-{
-}
+public struct PathAgentStatusFindTag : IComponentData, IEnableableComponent {}
 
-public struct PathAgentStatusAddPathRequestTag : IComponentData
-{
-}
+public struct PathAgentStatusAddPathRequestTag : IComponentData, IEnableableComponent {}
 
-public struct PathAgentStatusNoneTag : IComponentData
-{
-}
+public struct PathAgentStatusSignificantMoveTag : IComponentData, IEnableableComponent {}
 
-public struct PathAgentStatusReadyTag : IComponentData
-{
-}
+public struct PathAgentStatusNoneTag : IComponentData, IEnableableComponent {}
 
-public struct PathAgentStatusProcessTag : IComponentData
+public struct PathAgentStatusReadyTag : IComponentData, IEnableableComponent {}
+
+public struct PathAgentStatusProcessTag : IComponentData, IEnableableComponent
 {
     // public int wayBufferIndex;
 }
@@ -74,11 +68,6 @@ public class PathAgentStatusBaker : Baker<PathAgentStatusAuthoring>
     {
         var entity = GetEntity(TransformUsageFlags.Dynamic);
 
-        AddComponent(entity, new PathAgentStatus
-        {
-            Value = authoring.status
-        });
-
         AddComponent(entity, new PathRequestAgent
         {
             owner = entity,
@@ -86,15 +75,20 @@ public class PathAgentStatusBaker : Baker<PathAgentStatusAuthoring>
             destination = int2.zero
         });
 
-        if (authoring.status == AgentStatus.Find)
-        {
-            AddComponent(entity, new PathAgentStatusFindTag());
-            AddComponent(entity, new PathRequestMetadata());
-        }
-        else if (authoring.status == AgentStatus.None)
-        {
-            AddComponent(entity, new PathAgentStatusNoneTag());
-        }
+        AddComponent(entity, new PathAgentStatus { Value = authoring.status });
+        AddComponent(entity, new PathRequestMetadata { RequestTime = 0 });
+        
+        AddComponent<PathAgentStatusAddPathRequestTag>(entity);
+
+        AddComponent<PathAgentStatusFindTag>(entity);
+        AddComponent<PathAgentStatusProcessTag>(entity);
+        AddComponent<PathAgentStatusNoneTag>(entity);
+        AddComponent<PathAgentStatusSignificantMoveTag>(entity);
+
+        SetComponentEnabled<PathAgentStatusFindTag>(entity, true); 
+        SetComponentEnabled<PathAgentStatusProcessTag>(entity, false); 
+        SetComponentEnabled<PathAgentStatusNoneTag>(entity, false);
+        SetComponentEnabled<PathAgentStatusSignificantMoveTag>(entity, true);
 
         AddBuffer<Waypoint>(entity);
     }

@@ -12,6 +12,7 @@ namespace Gameplay
     {
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<PathTargetData>();
             state.RequireForUpdate<SpawnerConfig>();
         }
 
@@ -19,29 +20,40 @@ namespace Gameplay
         public void OnUpdate(ref SystemState state)
         {
             var spawnerEntity = SystemAPI.GetSingletonEntity<SpawnerConfig>();
+            var targetEntity = SystemAPI.GetSingletonEntity<PathTargetData>();
             var config = SystemAPI.GetComponent<SpawnerConfig>(spawnerEntity);
             
             var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.Temp);
             
-            for (int i = 0; i < instances.Length; i++)
-            {
-                state.EntityManager.SetName(instances[i], $"Agent_{i}");
-            }
-            
             var random = new Random(123);
+            var currentTime = SystemAPI.Time.ElapsedTime;
             
             foreach (var instance in instances)
             {
+                
+#if UNITY_EDITOR
+                state.EntityManager.SetName(instance, $"Agent_{instance.GetHashCode()}");
+#endif
+                
                 var offset = random.NextFloat3(
                     new float3(-config.SpawnRadius, 1, -config.SpawnRadius), 
                     new float3(config.SpawnRadius, 1, config.SpawnRadius));
         
                 var finalPos = config.SpawnPosition + offset;
                 
-                SystemAPI.SetComponent(instance, LocalTransform.FromPosition(finalPos));
-                SystemAPI.SetComponent(instance, new MoveSettings { speed = random.NextFloat(1f, 5f) });
-        
-                state.EntityManager.AddComponent<PathAgentStatusFindTag>(instance);
+                state.EntityManager.SetComponentData(instance, new PathRequestAgent
+                {
+                    owner = instance,
+                    focus = targetEntity, 
+                    startCoord = int2.zero,
+                    destination = int2.zero
+                });
+                
+                state.EntityManager.SetComponentData(instance, LocalTransform.FromPosition(finalPos));
+                state.EntityManager.SetComponentData(instance, new MoveSettings { speed = random.NextFloat(1f, 5f) });
+                state.EntityManager.SetComponentData(instance, new PathRequestMetadata { RequestTime = currentTime });
+                
+            
             }
             state.Enabled = false;
             

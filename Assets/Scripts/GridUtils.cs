@@ -1,15 +1,19 @@
-using System;
 using System.Runtime.CompilerServices;
 using PathfindingAStar;
-using Unity.Collections;
+using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
+[BurstCompile]
 public static class GridUtils {
     private const int QuadrantCellSize = 4;
     private const int QuadrantMultiplier = 100;
 
+    public static readonly int2[] Offsets = new int2[] {
+        new int2(1, 0), new int2(-1, 0), new int2(0, 1), new int2(0, -1)
+    };
+    
     // public static readonly NativeArray<int2> Directions = new NativeArray<int2>(4, Allocator.Persistent) {
     //     [0] = new int2(0, 1),
     //     [1] = new int2(1, 0),
@@ -29,6 +33,17 @@ public static class GridUtils {
         neighbours[2] = coord + new int2(0, 1);
         neighbours[3] = coord + new int2(0, -1);
         return neighbours;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int2 GetNeighbourCoord(int2 coord, int neighborIndex) {
+        switch (neighborIndex) {
+            case 0: return coord + new int2(1, 0);
+            case 1: return coord + new int2(-1, 0);
+            case 2: return coord + new int2(0, 1);
+            case 3: return coord + new int2(0, -1);
+            default: return coord;
+        }
     }
 
     /// <summary>
@@ -70,34 +85,11 @@ public static class GridUtils {
         int index = y * dimX + x;
         return index;
     }
-
-    /// <summary>
-    /// Get cell x,y coordinate of cell
-    /// </summary>
-    /// <param name="p0">world position goal cell</param>
-    /// <param name="p1">world position first cell(left down cell)</param>
-    /// <returns></returns>
-    // [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    // public static int2 WorldToCellCoord(float3 p0, float3 p1) {
-    //     var dx = math.round(math.abs(p0.x - p1.x));
-    //     var dy = math.round(math.abs(p0.y - p1.y));
-    //     return new int2((int) dx, (int) dy);
-    // }
-    
-    // [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    // public static int2 WorldToCellCoord(float3 p0, float3 p1) {
-    //     // ИСПРАВЛЕНО: Убрали abs(), используем деление на cellSize
-    //     var dx = math.round((p0.x - p1.x));
-    //     var dz = math.round((p0.z - p1.z));  // ← ИСПРАВЛЕНО: Y → Z
-    //     return new int2((int) dx, (int) dz);
-    // }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int2 WorldToCellCoord(float3 p0, float3 p1) {
-        // Убрали abs() и исправили Y → Z
-        var dx = (p0.x - p1.x);
-        var dz = (p0.z - p1.z);
-        return new int2((int)math.round(dx), (int)math.round(dz));
+    public static int2 WorldToCellCoord(float3 worldPos, float3 origin) {
+        float2 diff = worldPos.xz - origin.xz; 
+        return (int2)math.round(diff);
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -144,7 +136,7 @@ public static class GridUtils {
     /// <returns></returns>
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static float H_Euclid(int2 current, int2 destination) {
-        return math.distance(destination, current);
+        return math.csum(math.abs(destination - current));
     }
 
     /// <summary>
