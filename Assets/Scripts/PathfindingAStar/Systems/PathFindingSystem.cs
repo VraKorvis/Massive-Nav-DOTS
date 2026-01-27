@@ -1,9 +1,9 @@
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
+using UnityEngine;
 
 namespace PFStar
 {
@@ -17,16 +17,17 @@ namespace PFStar
 
         private NativeArray<int2> _neighbours;
         private NativeArray<float> _costSoFar;
+        private NativeArray<int> _searchVersions;
         private NativeArray<int2> _cameFrom;
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
         private const int IterationLimit = 5000;
         private const int InnerLoopBatchSize = 1;
-        
+
         private const int MaxPossibleAgents = 1000;
-        const int MaxPerFrame = 64; 
-        
+        const int MaxPerFrame = 256;
+
         private int _currentBufferSize;
 
         private ComponentLookup<PathRequestAgent> _pathRequestLookup;
@@ -38,11 +39,11 @@ namespace PFStar
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
-            
+
             _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAllRW<PathRequestAgent>()      
-                .WithAllRW<PathRequestMetadata>()   
-                .WithAll<PathAgentStatusFindTag>()  
+                .WithAllRW<PathRequestAgent>()
+                .WithAllRW<PathRequestMetadata>()
+                .WithAll<PathAgentStatusFindTag>()
                 .Build(ref state);
 
             _gridQuery = new EntityQueryBuilder(Allocator.Temp)
@@ -50,7 +51,7 @@ namespace PFStar
                 .Build(ref state);
 
             state.RequireForUpdate(_gridQuery);
-            
+
             _neighbours = new NativeArray<int2>(NeighborCount, Allocator.Persistent)
             {
                 [0] = new int2(-1, 0),
@@ -67,7 +68,6 @@ namespace PFStar
             _pathRequestLookup = state.GetComponentLookup<PathRequestAgent>(true);
             _gridBufferLookup = state.GetBufferLookup<GridBuffer>(true);
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
-            
         }
 
         [BurstCompile]
@@ -82,37 +82,38 @@ namespace PFStar
 
             int dimX = settings.Dimensions.x;
             int dimY = settings.Dimensions.y;
-            
+
             int gridSize = dimX * dimY;
-            
+
             if (!_costSoFar.IsCreated && gridSize > 0)
             {
                 _currentBufferSize = gridSize;
                 int totalCapacity = _currentBufferSize * MaxPossibleAgents;
-        
+
+                _searchVersions = new NativeArray<int>(totalCapacity, Allocator.Persistent);
                 _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
                 _cameFrom = new NativeArray<int2>(totalCapacity, Allocator.Persistent);
                 _openSet = new NativeMinHeap(totalCapacity, Allocator.Persistent);
-        
             }
 
             if (!_costSoFar.IsCreated) return;
-            
+
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
-            
+
             var entities = _pathRequestQuery.ToEntityArray(Allocator.TempJob);
             var metadata = _pathRequestQuery.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
-            
+
             if (entities.Length == 0) return;
-            
+
             var sortableList = new NativeList<SortableRequest>(entities.Length, Allocator.TempJob);
             for (int i = 0; i < entities.Length; i++)
             {
                 sortableList.Add(new SortableRequest { Entity = entities[i], RequestTime = metadata[i].RequestTime });
             }
+
             sortableList.Sort(new RequestComparer());
-            
+
             int agentsToProcess = math.min(totalWaiting, MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PathRequestAgent>(agentsToProcess, Allocator.TempJob);
@@ -130,7 +131,7 @@ namespace PFStar
             var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
             var parallelEcb = ecb.AsParallelWriter();
             _pathRequestLookup.Update(ref state);
-            
+
             var collectHandle = new CollectSortedPathsJob
             {
                 EntitiesToProcess = processingEntities,
@@ -138,24 +139,27 @@ namespace PFStar
                 PathArray = pathArray,
                 ECB = parallelEcb
             }.Schedule(agentsToProcess, 64, state.Dependency);
-            
+
             var findHandle = new FindPathAStarJob
             {
-                dimX = dimX,
-                dimY = dimY,
-                gridStride = _currentBufferSize,
+                DimX = dimX,
+                DimY = dimY,
+                GridStride = _currentBufferSize,
                 grid = gridBuffer,
                 WaypointsLookup = _waypointLookup,
-                pathList = pathArray,
+                ActualPathLookup = _pathRequestLookup,
+                PathList = pathArray,
+                SearchVersions = _searchVersions,
+                CurrentFrame = Time.frameCount,
                 CostSoFar = _costSoFar,
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
-                neighbours = _neighbours,
+                Neighbours = _neighbours,
                 ECB = parallelEcb
             }.Schedule(agentsToProcess, InnerLoopBatchSize, collectHandle);
 
             state.Dependency = findHandle;
-            
+
             processingEntities.Dispose(state.Dependency);
             pathArray.Dispose(state.Dependency);
         }
@@ -167,6 +171,7 @@ namespace PFStar
             if (_costSoFar.IsCreated) _costSoFar.Dispose();
             if (_cameFrom.IsCreated) _cameFrom.Dispose();
             if (_openSet.IsCreated) _openSet.Dispose();
+            if (_searchVersions.IsCreated) _searchVersions.Dispose();
         }
 
         [BurstCompile]
@@ -174,74 +179,87 @@ namespace PFStar
         {
             [ReadOnly] public NativeArray<Entity> EntitiesToProcess;
             [ReadOnly] public ComponentLookup<PathRequestAgent> PathRequestLookup;
-    
+
             [WriteOnly] public NativeArray<PathRequestAgent> PathArray;
             public EntityCommandBuffer.ParallelWriter ECB;
-            
+
             public void Execute(int index)
             {
                 Entity entity = EntitiesToProcess[index];
                 PathRequestAgent path = PathRequestLookup[entity];
 
                 PathArray[index] = path;
-                
+
                 ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, entity, false);
                 ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, entity, true);
                 ECB.SetComponent(index, entity, new PathAgentStatus { Value = AgentStatus.Process });
-                
             }
         }
 
         [BurstCompile]
-        private unsafe struct FindPathAStarJob : IJobParallelFor
+        private struct FindPathAStarJob : IJobParallelFor
         {
-            public int dimX;
-            public int dimY;
-            public int gridStride;
-            
+            public int DimX;
+            public int DimY;
+            public int GridStride;
+
+            public int CurrentFrame;
+
             public EntityCommandBuffer.ParallelWriter ECB;
-            
+
             [ReadOnly] public DynamicBuffer<GridBuffer> grid;
 
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
+            [ReadOnly] public ComponentLookup<PathRequestAgent> ActualPathLookup; 
 
-            [ReadOnly] public NativeArray<PathRequestAgent> pathList;
+            [ReadOnly] public NativeArray<PathRequestAgent> PathList;
 
+            [NativeDisableParallelForRestriction] public NativeArray<int> SearchVersions;
             [NativeDisableParallelForRestriction] public NativeArray<float> CostSoFar;
 
             [NativeDisableParallelForRestriction] public NativeArray<int2> CameFrom;
 
             [NativeDisableParallelForRestriction] public NativeMinHeap OpenSet;
 
-            [ReadOnly] public NativeArray<int2> neighbours;
+            [ReadOnly] public NativeArray<int2> Neighbours;
 
             public void Execute(int index)
             {
-                var costSoFarSlice = CostSoFar.Slice(index * gridStride, gridStride);
-                var cameFromSlice = CameFrom.Slice(index * gridStride, gridStride);
-                
-                var openSetSlice = OpenSet.Slice(index * gridStride, gridStride);
-                
-                var request = pathList[index];
-                
-                UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
-                UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
+                var searchVersionsSlice = SearchVersions.Slice(index * GridStride, GridStride);
+                var costSoFarSlice = CostSoFar.Slice(index * GridStride, GridStride);
+                var cameFromSlice = CameFrom.Slice(index * GridStride, GridStride);
+
+                var openSetSlice = OpenSet.Slice(index * GridStride, GridStride);
+
+                var request = PathList[index];
+
+                // UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
+                // UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
                 openSetSlice.Clear();
 
                 if (request.owner == Entity.Null) return;
+                
+                if (ActualPathLookup.HasComponent(request.owner))
+                {
+                    request.destination = ActualPathLookup[request.owner].destination;
+                }
 
                 var waypoints = WaypointsLookup[request.owner];
                 waypoints.Clear();
 
+                int uniqueSearchID = math.max(1, (CurrentFrame * 100000) + index);
+
                 var box = new BoxData
                 {
-                    waypoints = waypoints,
-                    dimX = dimX, dimY = dimY,
-                    startPos = request.startCoord,
-                    destination = request.destination,
-                    costSoFar = costSoFarSlice,
-                    cameFrom = cameFromSlice,
-                    openSet = openSetSlice
+                    Waypoints = waypoints,
+                    DimX = DimX, DimY = DimY,
+                    StartPos = request.startCoord,
+                    Destination = request.destination,
+                    CostSoFar = costSoFarSlice,
+                    CameFrom = cameFromSlice,
+                    OpenSet = openSetSlice,
+                    SearchVersions = searchVersionsSlice,
+                    SearchID = uniqueSearchID,
                 };
 
 
@@ -249,71 +267,81 @@ namespace PFStar
                 {
                     BuildPath(ref box);
                 }
-                else 
+                else
                 {
                     ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
-    
+
                     ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, request.owner, false);
                     ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, request.owner, false);
-    
+
                     ECB.SetComponentEnabled<PathAgentStatusNoneTag>(index, request.owner, true);
                 }
-                
             }
 
             private struct BoxData
             {
-                public DynamicBuffer<Waypoint> waypoints;
-                public int dimX;
-                public int dimY;
-                public int2 startPos;
-                public int2 destination;
-                public NativeSlice<float> costSoFar;
-                public NativeSlice<int2> cameFrom;
-                public NativeMinHeap openSet;
+                public DynamicBuffer<Waypoint> Waypoints;
+                public int DimX;
+                public int DimY;
+                public int2 StartPos;
+                public int2 Destination;
+                public NativeSlice<float> CostSoFar;
+                public NativeSlice<int2> CameFrom;
+                public NativeMinHeap OpenSet;
+
+                public NativeSlice<int> SearchVersions;
+                public int SearchID;
             }
 
             private bool FindPath(ref BoxData box)
             {
-                if (box.startPos.Equals(box.destination))
+                if (box.StartPos.Equals(box.Destination))
                 {
-                    var indexCell = GridUtils.CoordToIndex(box.destination, box.dimX);
-                    box.waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, indexCell) });
+                    var indexCell = GridUtils.CoordToIndex(box.Destination, box.DimX);
+                    box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, indexCell) });
                     return false;
                 }
 
-                var H = GridUtils.H_Euclid(box.startPos, box.destination);
-                box.openSet.Push(new MinHeapNode(box.startPos, H, H));
+                var startIdx = GridUtils.CoordToIndex(box.StartPos, box.DimX);
+                box.CostSoFar[startIdx] = 0;
+                box.SearchVersions[startIdx] = box.SearchID;
+                
+                var H = GridUtils.H_Euclid(box.StartPos, box.Destination);
+                box.OpenSet.Push(new MinHeapNode(box.StartPos, H, H));
 
                 int counter = 0;
-                while (box.openSet.HasNext())
+                while (box.OpenSet.HasNext())
                 {
                     if (counter++ > IterationLimit) return false;
-                    var current = box.openSet.Pop();
-                    if (current.Position.Equals(box.destination)) return true;
+                    var current = box.OpenSet.Pop();
+                    if (current.Position.Equals(box.Destination)) return true;
 
-                    var fromIndex = GridUtils.CoordToIndex(current.Position, box.dimX);
-                    var initialCost = box.costSoFar[fromIndex];
+                    var fromIndex = GridUtils.CoordToIndex(current.Position, box.DimX);
+                    var initialCost = box.CostSoFar[fromIndex];
 
-                    for (int i = 0; i < neighbours.Length; i++)
+                    for (int i = 0; i < Neighbours.Length; i++)
                     {
-                        var nextPosition = current.Position + neighbours[i];
-                        if (nextPosition.x < 0 || nextPosition.x >= box.dimX ||
-                            nextPosition.y < 0 || nextPosition.y >= box.dimY) continue;
+                        var nextPosition = current.Position + Neighbours[i];
+                        if (nextPosition.x < 0 || nextPosition.x >= box.DimX ||
+                            nextPosition.y < 0 || nextPosition.y >= box.DimY) continue;
 
-                        var toIndex = GridUtils.CoordToIndex(nextPosition, box.dimX);
+                        var toIndex = GridUtils.CoordToIndex(nextPosition, box.DimX);
                         var cellCost = GetCost(toIndex, i);
+
                         if (float.IsInfinity(cellCost)) continue;
 
                         var newCost = initialCost + cellCost;
-                        var oldCost = box.costSoFar[toIndex];
+
+                        bool isVisited = box.SearchVersions[toIndex] == box.SearchID;
+                        float oldCost = isVisited ? box.CostSoFar[toIndex] : float.MaxValue;
 
                         if (oldCost > 0 && oldCost <= newCost) continue;
-
-                        box.costSoFar[toIndex] = newCost;
-                        box.cameFrom[toIndex] = current.Position;
-                        var h = GridUtils.H_Euclid(nextPosition, box.destination);
-                        box.openSet.Push(new MinHeapNode(nextPosition, newCost + h, h));
+                        
+                        box.CostSoFar[toIndex] = newCost;
+                        box.SearchVersions[toIndex] = box.SearchID;
+                        box.CameFrom[toIndex] = current.Position;
+                        var h = GridUtils.H_Euclid(nextPosition, box.Destination);
+                        box.OpenSet.Push(new MinHeapNode(nextPosition, newCost + h, h));
                     }
                 }
 
@@ -322,15 +350,15 @@ namespace PFStar
 
             private void BuildPath(ref BoxData box)
             {
-                var ind = GridUtils.CoordToIndex(box.destination, box.dimX);
-                box.waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, ind) });
+                var ind = GridUtils.CoordToIndex(box.Destination, box.DimX);
+                box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, ind) });
 
-                var currCoord = box.cameFrom[ind];
-                while (!currCoord.Equals(box.startPos))
+                var currCoord = box.CameFrom[ind];
+                while (!currCoord.Equals(box.StartPos))
                 {
-                    int cInd = GridUtils.CoordToIndex(currCoord, box.dimX);
-                    box.waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, cInd) });
-                    currCoord = box.cameFrom[cInd];
+                    int cInd = GridUtils.CoordToIndex(currCoord, box.DimX);
+                    box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, cInd) });
+                    currCoord = box.CameFrom[cInd];
                 }
             }
 
