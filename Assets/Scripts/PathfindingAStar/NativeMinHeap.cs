@@ -9,11 +9,11 @@ using Unity.Mathematics;
 /// </summary>
 [NativeContainer]
 [NativeContainerSupportsDeallocateOnJobCompletion]
-public unsafe struct NativeMinHeap : IDisposable {
+public unsafe struct NativeMinHeap : IDisposable
+{
     private Allocator allocator;
 
-    [NativeDisableUnsafePtrRestriction]
-    private void* buffer;
+    [NativeDisableUnsafePtrRestriction] private MinHeapNode* buffer;
 
     private int capacity;
 
@@ -24,25 +24,33 @@ public unsafe struct NativeMinHeap : IDisposable {
 
     private int head;
     private int length;
-    
+    private int _padding; // stub, NativeMinHeap => 24b
+
     public bool IsCreated => buffer != null;
 
-    public NativeMinHeap(int capacity, Allocator allocator) {
+    public NativeMinHeap(int capacity, Allocator allocator)
+    {
+        _padding = 0;
+
         var size = (long)UnsafeUtility.SizeOf<MinHeapNode>() * capacity;
-        
-        if (allocator <= Allocator.None) {
+
+        if (allocator <= Allocator.None)
+        {
             throw new ArgumentException("Allocator must be Temp, TempJob or Persistent", nameof(allocator));
         }
 
-        if (capacity < 0) {
+        if (capacity < 0)
+        {
             throw new ArgumentOutOfRangeException(nameof(capacity), "Length must be >= 0");
         }
 
-        if (size > int.MaxValue) {
-            throw new ArgumentOutOfRangeException(nameof(capacity), $"Length * sizeof(T) cannot exceed {int.MaxValue} bytes");
+        if (size > int.MaxValue)
+        {
+            throw new ArgumentOutOfRangeException(nameof(capacity),
+                $"Length * sizeof(T) cannot exceed {int.MaxValue} bytes");
         }
 
-        this.buffer = UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<MinHeapNode>(), allocator);
+        buffer = (MinHeapNode*)UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<MinHeapNode>(), allocator);
         this.capacity = capacity;
         this.allocator = allocator;
         this.head = -1;
@@ -54,54 +62,64 @@ public unsafe struct NativeMinHeap : IDisposable {
 #endif
     }
 
-    public bool HasNext() {
+    public bool HasNext()
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
 #endif
         return head >= 0;
     }
 
-    public void Push(MinHeapNode node) {
+    public void Push(MinHeapNode node)
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-        AtomicSafetyHandle.CheckWriteAndThrow(m_Safety); 
-        if (length == capacity) {
+        AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
+        if (length == capacity)
+        {
             throw new IndexOutOfRangeException("Capacity Reached");
         }
 #endif
-        if (head < 0) {
+        MinHeapNode* nodes = buffer;
+
+        if (head < 0)
+        {
             head = length;
-        } else if (node.ExpectedCost < Get(head).ExpectedCost) {
+        }
+        else if (node.ExpectedCost < buffer[head].ExpectedCost)
+        {
             node.Next = head;
             head = length;
-        } else {
+        }
+        else
+        {
             var currentPtr = head;
-            var current = Get(currentPtr);
-            
-            while (current.Next >= 0 && Get(current.Next).ExpectedCost <= node.ExpectedCost) {
-                currentPtr = current.Next;
-                current = Get(current.Next);
+            while (nodes[currentPtr].Next >= 0 &&
+                   nodes[nodes[currentPtr].Next].ExpectedCost <= node.ExpectedCost)
+            {
+                currentPtr = nodes[currentPtr].Next;
             }
-            
-            node.Next = current.Next;
-            current.Next = length;
 
-            UnsafeUtility.WriteArrayElement(buffer, currentPtr, current);
+            node.Next = nodes[currentPtr].Next;
+            nodes[currentPtr].Next = length;
         }
 
-        UnsafeUtility.WriteArrayElement(buffer, length, node);
+        buffer[length] = node;
         length += 1;
     }
 
-    public MinHeapNode Pop() {
+    public MinHeapNode Pop()
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-        var result = head;
-        head = Get(head).Next;
-        return Get(result);
+        int resultIndex = head;
+        MinHeapNode resultNode = buffer[resultIndex];
+        head = resultNode.Next;
+        return resultNode;
     }
 
-    public void Clear() {
+    public void Clear()
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
@@ -109,58 +127,68 @@ public unsafe struct NativeMinHeap : IDisposable {
         length = 0;
     }
 
-    public void Dispose() {
+    public void Dispose()
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         AtomicSafetyHandle.Release(m_Safety);
 #endif
-        if (!UnsafeUtility.IsValidAllocator(allocator)) {
+        if (!UnsafeUtility.IsValidAllocator(allocator))
+        {
             return;
         }
+
         UnsafeUtility.Free(buffer, allocator);
         buffer = null;
         capacity = 0;
     }
 
-    public NativeMinHeap Slice(int start, int length) {
+    public NativeMinHeap Slice(int start, int sliceLength)
+    {
         var stride = UnsafeUtility.SizeOf<MinHeapNode>();
 
-        return new NativeMinHeap {
-            buffer = (byte*)((IntPtr)buffer + stride * start),
-            capacity = length,
+        return new NativeMinHeap
+        {
+            buffer = (MinHeapNode*)((byte*)buffer + (stride * start)),
+            capacity = sliceLength,
             length = 0,
             head = -1,
-            allocator = Allocator.None, 
+            allocator = Allocator.None,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_Safety = m_Safety,
 #endif
         };
     }
 
-    private MinHeapNode Get(int index) {
+    private MinHeapNode Get(int index)
+    {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-        if (index < 0 || index >= length) {
+        if (index < 0 || index >= length)
+        {
             FailOutOfRangeError(index);
         }
+
         AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
 #endif
         return UnsafeUtility.ReadArrayElement<MinHeapNode>(buffer, index);
     }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
-    private void FailOutOfRangeError(int index) {
+    private void FailOutOfRangeError(int index)
+    {
         throw new IndexOutOfRangeException($"Index {index} is out of range of '{capacity}' Length.");
     }
 #endif
 }
 
-public struct MinHeapNode {
-    
+public struct MinHeapNode
+{
     public int2 Position;
     public float ExpectedCost;
     public float DistanceToGoal;
     public int Next;
 
-    public MinHeapNode(int2 position, float expectedCost, float distanceToGoal) {
+    public MinHeapNode(int2 position, float expectedCost, float distanceToGoal)
+    {
         Position = position;
         ExpectedCost = expectedCost;
         DistanceToGoal = distanceToGoal;
