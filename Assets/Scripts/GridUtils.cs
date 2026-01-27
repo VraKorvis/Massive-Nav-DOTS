@@ -35,6 +35,12 @@ public static class GridUtils {
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static int2 IndexToCoord(int index, int dimX)
+    {
+        return new int2(index % dimX, index / dimX);
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int2 WorldToCellCoord(float3 worldPos, float3 origin) {
         float2 diff = worldPos.xz - origin.xz; 
         return (int2)math.round(diff);
@@ -53,6 +59,19 @@ public static class GridUtils {
         var cell = grid[index];
         var worldPos = cell.WorldPos;
         return worldPos;
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float3 CoordToWorld(ref GridBlob grid, int index)
+    {
+        int x = index % grid.Dimensions.x;
+        int y = index / grid.Dimensions.x;
+
+        return new float3(
+            (x * grid.CellSize) + grid.Origin.x,
+            grid.Origin.y,
+            (y * grid.CellSize) + grid.Origin.z
+        );
     }
 
     /// <summary>

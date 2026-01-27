@@ -22,17 +22,17 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 5000;
-        private const int InnerLoopBatchSize = 1;
+        private const int IterationLimit = 2000;
+        private const int InnerLoopBatchSize = 64;
 
-        private const int MaxPossibleAgents = 1000;
-        const int MaxPerFrame = 256;
+        private const int MaxPossibleAgents = 1024;
+        const int MaxPerFrame = 1024;
 
         private int _currentBufferSize;
 
         private ComponentLookup<PathRequestAgent> _pathRequestLookup;
-        private BufferLookup<GridBuffer> _gridBufferLookup;
         private BufferLookup<Waypoint> _waypointLookup;
+        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -47,7 +47,7 @@ namespace PFStar
                 .Build(ref state);
 
             _gridQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<GridBuffer, GridTag>()
+                .WithAll<GridTag, GridBlobReference>()
                 .Build(ref state);
 
             state.RequireForUpdate(_gridQuery);
@@ -64,22 +64,23 @@ namespace PFStar
                 [6] = new int2(1, -1),
                 [7] = new int2(-1, -1)
             };
-
+            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
+            
             _pathRequestLookup = state.GetComponentLookup<PathRequestAgent>(true);
-            _gridBufferLookup = state.GetBufferLookup<GridBuffer>(true);
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            _gridBufferLookup.Update(ref state);
             _waypointLookup.Update(ref state);
-
+            _gridBlobLookup.Update(ref state);
+            
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridBuffer = _gridBufferLookup[gridEntity];
             var settings = SystemAPI.GetComponent<GridSettings>(gridEntity);
 
+            var gridBlobRef = _gridBlobLookup[gridEntity].Value; 
+            
             int dimX = settings.Dimensions.x;
             int dimY = settings.Dimensions.y;
 
@@ -142,10 +143,10 @@ namespace PFStar
 
             var findHandle = new FindPathAStarJob
             {
+                GridBlob = gridBlobRef,
                 DimX = dimX,
                 DimY = dimY,
                 GridStride = _currentBufferSize,
-                grid = gridBuffer,
                 WaypointsLookup = _waypointLookup,
                 ActualPathLookup = _pathRequestLookup,
                 PathList = pathArray,
@@ -207,7 +208,7 @@ namespace PFStar
 
             public EntityCommandBuffer.ParallelWriter ECB;
 
-            [ReadOnly] public DynamicBuffer<GridBuffer> grid;
+            [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
 
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
             [ReadOnly] public ComponentLookup<PathRequestAgent> ActualPathLookup; 
@@ -251,6 +252,7 @@ namespace PFStar
 
                 var box = new BoxData
                 {
+                    GridBlob = GridBlob,
                     Waypoints = waypoints,
                     DimX = DimX, DimY = DimY,
                     StartPos = request.startCoord,
@@ -265,7 +267,7 @@ namespace PFStar
 
                 if (FindPath(ref box))
                 {
-                    BuildPath(ref box);
+                    BuildPath(ref GridBlob.Value, ref box);
                 }
                 else
                 {
@@ -280,6 +282,7 @@ namespace PFStar
 
             private struct BoxData
             {
+                [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
                 public DynamicBuffer<Waypoint> Waypoints;
                 public int DimX;
                 public int DimY;
@@ -295,11 +298,14 @@ namespace PFStar
 
             private bool FindPath(ref BoxData box)
             {
+                ref var grid = ref box.GridBlob.Value;
+                
                 if (box.StartPos.Equals(box.Destination))
                 {
                     var indexCell = GridUtils.CoordToIndex(box.Destination, box.DimX);
-                    box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, indexCell) });
-                    return false;
+                    box.Waypoints.Add(new Waypoint { 
+                        point = GridUtils.CoordToWorld(ref grid, indexCell) 
+                    });                    return false;
                 }
 
                 var startIdx = GridUtils.CoordToIndex(box.StartPos, box.DimX);
@@ -326,7 +332,7 @@ namespace PFStar
                             nextPosition.y < 0 || nextPosition.y >= box.DimY) continue;
 
                         var toIndex = GridUtils.CoordToIndex(nextPosition, box.DimX);
-                        var cellCost = GetCost(toIndex, i);
+                        var cellCost = GetCost(toIndex, i, ref grid);
 
                         if (float.IsInfinity(cellCost)) continue;
 
@@ -348,28 +354,32 @@ namespace PFStar
                 return false;
             }
 
-            private void BuildPath(ref BoxData box)
+            private void BuildPath(ref GridBlob grid, ref BoxData box)
             {
                 var ind = GridUtils.CoordToIndex(box.Destination, box.DimX);
-                box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, ind) });
+                box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(ref grid, ind) });
 
                 var currCoord = box.CameFrom[ind];
                 while (!currCoord.Equals(box.StartPos))
                 {
                     int cInd = GridUtils.CoordToIndex(currCoord, box.DimX);
-                    box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(grid, cInd) });
+                    box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(ref grid, cInd) });
                     currCoord = box.CameFrom[cInd];
                 }
             }
 
-            private float GetCost(int gridIndex, int neighborIndex)
+            private float GetCost(int gridIndex, int neighborIndex, ref GridBlob grid)
             {
-                if (grid[gridIndex].Type == CellType.Wall)
+                if (grid.CellsType[gridIndex] == CellType.Wall)
                 {
                     return float.PositiveInfinity;
                 }
-
-                return (neighborIndex < 4) ? 1f : 1.414f;
+                
+                //TODO add Weights
+                // float baseWeight = grid.Weights[gridIndex];
+                float baseWeight = 1;
+                float distanceMultiplier = (neighborIndex < 4) ? 1f : 1.414f;
+                return baseWeight * distanceMultiplier;
             }
         }
     }

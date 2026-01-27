@@ -27,7 +27,8 @@ namespace PFStar
                 AddComponent(entity, new GridSettings
                 {
                     Dimensions = authoring.dimensions,
-                    Origin = cornerOrigin 
+                    Origin = cornerOrigin,
+                    CellSize = authoring.cellSize 
                 });
 
                 var buffer = AddBuffer<GridBuffer>(entity);
