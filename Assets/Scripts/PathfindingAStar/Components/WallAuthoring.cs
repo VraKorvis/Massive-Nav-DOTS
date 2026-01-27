@@ -1,6 +1,6 @@
 using UnityEngine;
 
-namespace PathfindingAStar
+namespace PFStar
 {
     public class WallAuthoring : MonoBehaviour
     {

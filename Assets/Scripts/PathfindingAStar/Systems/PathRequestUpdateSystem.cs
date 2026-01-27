@@ -5,7 +5,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace PathfindingAStar
+namespace PFStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [BurstCompile]

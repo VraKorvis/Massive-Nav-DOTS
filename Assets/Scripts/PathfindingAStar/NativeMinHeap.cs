@@ -2,7 +2,6 @@ using System;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Mathematics;
-using UnityEngine;
 
 /// <summary>
 /// A native min heap implementation optimized for pathfinding.
@@ -155,8 +154,7 @@ public unsafe struct NativeMinHeap : IDisposable {
 }
 
 public struct MinHeapNode {
-    // В Unity 6 свойства в структурах для Burst лучше делать через публичные поля 
-    // или авто-свойства с приватным сеттером для гарантии корректной упаковки в памяти.
+    
     public int2 Position;
     public float ExpectedCost;
     public float DistanceToGoal;

@@ -1,4 +1,4 @@
-using PathfindingAStar;
+using PFStar;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;

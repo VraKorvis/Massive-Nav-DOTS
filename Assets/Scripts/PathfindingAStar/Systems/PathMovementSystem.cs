@@ -3,7 +3,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace PathfindingAStar
+namespace PFStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PathFindingSystem))]
@@ -23,24 +23,20 @@ namespace PathfindingAStar
             public float DeltaTime;
 
             private void Execute(
-                ref DynamicBuffer<Waypoint> way, 
-                ref MoveSettings moveData, 
-                ref Heading headingAuthoring,
-                ref LocalTransform transform, 
+                ref DynamicBuffer<Waypoint> way,
+                ref MoveSettings moveData,
+                ref LocalTransform transform,
                 in PathAgentStatusProcessTag status)
             {
-                if (way.Length == 0) return;
+                if (way.IsEmpty) return;
 
                 int lastIndex = way.Length - 1;
                 float3 targetPos = way[lastIndex].point;
                 float3 currentPos = transform.Position;
-            
-                float3 dir = math.normalizesafe(targetPos - currentPos);
-                headingAuthoring.VectorDirection = new int2((int)math.round(dir.x), (int)math.round(dir.z));
 
-                float3 nextPos = currentPos + dir * moveData.speed * DeltaTime;
-            
-                float distSq = math.distancesq(targetPos, currentPos);
+                float3 toTarget = targetPos - currentPos;
+
+                float distSq = math.lengthsq(toTarget);
                 float step = moveData.speed * DeltaTime;
 
                 if (distSq <= step * step)
@@ -50,10 +46,11 @@ namespace PathfindingAStar
                 }
                 else
                 {
-                    transform.Position = nextPos;
+                    float3 dir = toTarget * math.rsqrt(distSq);
+                    transform.Position = currentPos + dir * step;
+
+                    moveData.targetCellPos = targetPos;
                 }
-            
-                moveData.targetCellPos = targetPos;
             }
         }
     }

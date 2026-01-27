@@ -2,7 +2,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
-namespace PathfindingAStar
+namespace PFStar
 {
     public class GridAuthoring : MonoBehaviour {
         public int2 dimensions = new int2(100, 100);

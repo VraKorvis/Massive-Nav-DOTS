@@ -1,7 +1,7 @@
 using Unity.Entities;
 using Unity.Mathematics;
 
-namespace PathfindingAStar
+namespace PFStar
 {
     public struct GridSettings : IComponentData {
         public int2 Dimensions;
