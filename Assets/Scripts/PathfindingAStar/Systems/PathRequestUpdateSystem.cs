@@ -18,7 +18,7 @@ namespace PFStar
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
-            state.RequireForUpdate<PathTargetData>();
+            state.RequireForUpdate<NavigationTargetGridData>();
 
             _requestsCounter = new NativeArray<int>(1, Allocator.Persistent);
         }
@@ -35,7 +35,7 @@ namespace PFStar
             
             var job = new PathRequestStatusJob
             {
-                TargetDataLookup = SystemAPI.GetComponentLookup<PathTargetData>(true),
+                TargetDataLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
                 TargetChangedLookup = SystemAPI.GetComponentLookup<TargetChangedTag>(true),
 
                 
@@ -53,7 +53,7 @@ namespace PFStar
         [BurstCompile]
         public partial struct PathRequestStatusJob : IJobEntity
         {
-            [ReadOnly] public ComponentLookup<PathTargetData> TargetDataLookup;
+            [ReadOnly] public ComponentLookup<NavigationTargetGridData> TargetDataLookup;
             [ReadOnly] public ComponentLookup<TargetChangedTag> TargetChangedLookup;
 
             public float3 GridOrigin;
@@ -73,8 +73,6 @@ namespace PFStar
                 EnabledRefRW<PathAgentStatusProcessTag> processTag)
             {
                 Entity myTarget = request.ValueRO.focus;
-                // if (!TargetDataLookup.HasComponent(myTarget)) return;
-                // int2 actualTargetCell = TargetDataLookup[myTarget].CurrentCell;
 
                 bool isUrgent = sigTag.ValueRO;;
 
