@@ -1,9 +1,24 @@
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
 
 namespace PFStar
 {
+    public struct GridBlob
+    {
+        public int2 Dimensions;
+        public float3 Origin;
+        public float CellSize;
+        public BlobArray<CellType> CellsType;
+        public BlobArray<float> Weights;
+    }
+
+    public struct GridBlobReference : IComponentData
+    {
+        public BlobAssetReference<GridBlob> Value;
+    }
+    
     public class UniversalGridAuthoring : MonoBehaviour
     {
         public int2 dimensions;
@@ -21,35 +36,27 @@ namespace PFStar
                     0, 
                     (authoring.dimensions.y - 1) * authoring.cellSize * 0.5f
                 );
-                float3 cornerOrigin = position - offset;
                 
-                AddComponent(entity, new GridTag());
-                AddComponent(entity, new GridSettings
+                float3 cornerOrigin = position - offset + new float3(0, 1.0f, 0);
+                
+                using var builder = new BlobBuilder(Allocator.Temp);
+                ref GridBlob root = ref builder.ConstructRoot<GridBlob>();  
+                
+                root.Dimensions = authoring.dimensions;
+                root.Origin = cornerOrigin;
+                root.CellSize = authoring.cellSize;
+                
+                int totalCells = authoring.dimensions.x * authoring.dimensions.y;
+                var cells = builder.Allocate(ref root.CellsType, totalCells);
+                var weights = builder.Allocate(ref root.Weights, totalCells);
+                
+                for (int i = 0; i < totalCells; i++)
                 {
-                    Dimensions = authoring.dimensions,
-                    Origin = cornerOrigin,
-                    CellSize = authoring.cellSize 
-                });
-
-                var buffer = AddBuffer<GridBuffer>(entity);
-                
-                float3 origin = position - offset;
-                
-                for (int y = 0; y < authoring.dimensions.y; y++)
-                {
-                    for (int x = 0; x < authoring.dimensions.x; x++)
-                    {
-                        float3 worldPos = origin + new float3(x * authoring.cellSize, 0, y * authoring.cellSize);
-                        buffer.Add(new GridBuffer
-                        {
-                            WorldPos = worldPos,
-                            Type = CellType.Ground
-                        });
-                    }
+                    cells[i] = CellType.Ground;
+                    weights[i] = 1.0f;
                 }
-
+                
                 var walls = FindObjectsByType<WallAuthoring>(FindObjectsSortMode.None);
-
                 foreach (var wall in walls)
                 {
                     float3 wallPos = wall.transform.position;
@@ -58,8 +65,8 @@ namespace PFStar
                     float3 minP = wallPos - (wallScale * 0.5f);
                     float3 maxP = wallPos + (wallScale * 0.5f);
 
-                    int2 minCoord = GridUtils.WorldToCellCoord(minP, origin);
-                    int2 maxCoord = GridUtils.WorldToCellCoord(maxP, origin);
+                    int2 minCoord = GridUtils.WorldToCellCoord(minP, cornerOrigin);
+                    int2 maxCoord = GridUtils.WorldToCellCoord(maxP, cornerOrigin);
 
                     int startX = math.max(0, minCoord.x);
                     int endX = math.min(authoring.dimensions.x - 1, maxCoord.x);
@@ -71,13 +78,24 @@ namespace PFStar
                         for (int x = startX; x <= endX; x++)
                         {
                             int index = GridUtils.CoordToIndex(new int2(x, y), authoring.dimensions.x);
-            
-                            var cell = buffer[index];
-                            cell.Type = CellType.Wall;
-                            buffer[index] = cell;
+                            cells[index] = CellType.Wall;
+                            weights[index] = float.PositiveInfinity;
                         }
                     }
                 }
+                               
+                AddComponent(entity, new GridTag());
+                AddComponent(entity, new GridSettings
+                {
+                    Dimensions = authoring.dimensions,
+                    Origin = cornerOrigin,
+                    CellSize = authoring.cellSize 
+                });
+                
+                var blobRef = builder.CreateBlobAssetReference<GridBlob>(Allocator.Persistent);
+                AddBlobAsset(ref blobRef, out var hash); 
+                AddComponent(entity, new GridBlobReference { Value = blobRef });
+                
             }
         }
 

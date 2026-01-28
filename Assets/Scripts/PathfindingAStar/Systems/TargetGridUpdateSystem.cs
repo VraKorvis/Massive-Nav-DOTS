@@ -32,7 +32,7 @@ namespace PFStar
             bool anyTargetMoved = false;
             
             foreach (var (transform, targetData, entity) in 
-                     SystemAPI.Query<RefRO<LocalTransform>, RefRW<PathTargetData>>()
+                     SystemAPI.Query<RefRO<LocalTransform>, RefRW<NavigationTargetGridData>>()
                          .WithEntityAccess())
             {
                 int2 newCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin);
@@ -40,7 +40,7 @@ namespace PFStar
                 if (!newCoord.Equals(targetData.ValueRO.CurrentCell))
                 {
                     targetData.ValueRW.CurrentCell = newCoord;
-                
+            
                     int distance = math.abs(newCoord.x - targetData.ValueRO.LastSignificantCell.x) + 
                                    math.abs(newCoord.y - targetData.ValueRO.LastSignificantCell.y);
 
@@ -48,7 +48,6 @@ namespace PFStar
                     {
                         targetData.ValueRW.LastSignificantCell = newCoord;
                         SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, true);
-                        anyTargetMoved = true;
                     }
                     else
                     {

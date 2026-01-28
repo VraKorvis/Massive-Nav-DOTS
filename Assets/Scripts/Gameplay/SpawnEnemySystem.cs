@@ -12,7 +12,7 @@ namespace Gameplay
     {
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<PathTargetData>();
+            state.RequireForUpdate<NavigationTargetGridData>();
             state.RequireForUpdate<SpawnerConfig>();
         }
 
@@ -20,7 +20,7 @@ namespace Gameplay
         public void OnUpdate(ref SystemState state)
         {
             var spawnerEntity = SystemAPI.GetSingletonEntity<SpawnerConfig>();
-            var targetEntity = SystemAPI.GetSingletonEntity<PathTargetData>();
+            var targetEntity = SystemAPI.GetSingletonEntity<NavigationTargetGridData>();
             var config = SystemAPI.GetComponent<SpawnerConfig>(spawnerEntity);
             
             var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.Temp);
@@ -30,11 +30,6 @@ namespace Gameplay
             
             foreach (var instance in instances)
             {
-                
-#if UNITY_EDITOR
-                state.EntityManager.SetName(instance, $"Agent_{instance.GetHashCode()}");
-#endif
-                
                 var offset = random.NextFloat3(
                     new float3(-config.SpawnRadius, 1, -config.SpawnRadius), 
                     new float3(config.SpawnRadius, 1, config.SpawnRadius));
