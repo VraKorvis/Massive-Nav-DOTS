@@ -98,4 +98,12 @@ public static class GridUtils {
         return math.csum(math.abs(destination - current));
     }
     
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float H_Octile(int2 current, int2 destination) {
+        int dx = math.abs(current.x - destination.x);
+        int dy = math.abs(current.y - destination.y);
+        
+        return (dx + dy) + (1.4142135f - 2f) * math.min(dx, dy);
+    }
+    
 }

@@ -22,11 +22,12 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 2000;
+        private const int IterationLimit = 1000;
         private const int InnerLoopBatchSize = 64;
 
         private const int MaxPossibleAgents = 1024;
-        const int MaxPerFrame = 1024;
+        private const int MaxPerFrame = 256;
+        private const float GreedyCoef = 1.5f;
 
         private int _currentBufferSize;
 
@@ -139,7 +140,7 @@ namespace PFStar
                 PathRequestLookup = _pathRequestLookup,
                 PathArray = pathArray,
                 ECB = parallelEcb
-            }.Schedule(agentsToProcess, 64, state.Dependency);
+            }.Schedule(agentsToProcess, InnerLoopBatchSize, state.Dependency);
 
             var findHandle = new FindPathAStarJob
             {
@@ -312,14 +313,30 @@ namespace PFStar
                 box.CostSoFar[startIdx] = 0;
                 box.SearchVersions[startIdx] = box.SearchID;
                 
-                var H = GridUtils.H_Euclid(box.StartPos, box.Destination);
-                box.OpenSet.Push(new MinHeapNode(box.StartPos, H, H));
-
+                var H = GridUtils.H_Octile(box.StartPos, box.Destination); 
+                float weightedH = H * GreedyCoef;
+                box.OpenSet.Push(new MinHeapNode(box.StartPos, weightedH, weightedH));
+                float minH = float.MaxValue;
+                
+                int2 bestPointSoFar = box.StartPos;
+                
                 int counter = 0;
                 while (box.OpenSet.HasNext())
                 {
-                    if (counter++ > IterationLimit) return false;
+                    if (counter++ > IterationLimit)
+                    {
+                        box.Destination = bestPointSoFar;
+                        return true;
+                    }
+                    
                     var current = box.OpenSet.Pop();
+                    
+                    if (current.DistanceToGoal < minH)
+                    {
+                        minH = current.DistanceToGoal;
+                        bestPointSoFar = current.Position;
+                    }
+                    
                     if (current.Position.Equals(box.Destination)) return true;
 
                     var fromIndex = GridUtils.CoordToIndex(current.Position, box.DimX);
@@ -346,8 +363,11 @@ namespace PFStar
                         box.CostSoFar[toIndex] = newCost;
                         box.SearchVersions[toIndex] = box.SearchID;
                         box.CameFrom[toIndex] = current.Position;
-                        var h = GridUtils.H_Euclid(nextPosition, box.Destination);
-                        box.OpenSet.Push(new MinHeapNode(nextPosition, newCost + h, h));
+                        var h = GridUtils.H_Octile(nextPosition, box.Destination);
+                        weightedH = h * GreedyCoef;
+                        
+                        float f = newCost + weightedH;
+                        box.OpenSet.Push(new MinHeapNode(nextPosition, f, weightedH));
                     }
                 }
 
