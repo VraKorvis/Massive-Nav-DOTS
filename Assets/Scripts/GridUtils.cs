@@ -35,6 +35,16 @@ public static class GridUtils {
     }
     
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float3 CoordToWorld(int2 coord, float3 origin, float cellSize)
+    {
+        return new float3(
+            (coord.x * cellSize) + origin.x,
+            origin.y,
+            (coord.y * cellSize) + origin.z
+        );
+    }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static int2 IndexToCoord(int index, int dimX)
     {
         return new int2(index % dimX, index / dimX);

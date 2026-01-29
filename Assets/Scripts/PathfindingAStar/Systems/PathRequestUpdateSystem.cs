@@ -11,11 +11,11 @@ namespace PFStar
     [BurstCompile]
     public unsafe partial struct PathRequestUpdateSystem : ISystem
     {
-        private const int MaxRequestsPerFrame = 10000;
         private NativeArray<int> _requestsCounter;
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridTag>();
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<NavigationTargetGridData>();
@@ -32,16 +32,20 @@ namespace PFStar
         public void OnUpdate(ref SystemState state)
         {
             _requestsCounter[0] = 0;
+            if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
+
+            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
+            var gridBlobRef = SystemAPI.GetComponent<GridBlobReference>(gridEntity).Value;
             
             var job = new PathRequestStatusJob
             {
                 TargetDataLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
                 TargetChangedLookup = SystemAPI.GetComponentLookup<TargetChangedTag>(true),
 
-                
+                GridBlob = gridBlobRef, 
                 GridOrigin = SystemAPI.GetSingleton<GridSettings>().Origin,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
-                MaxRequests = MaxRequestsPerFrame,
+                MaxRequests = pfSettings.MaxRequestsPerFrame,
 
                 Counter = _requestsCounter,
             };
@@ -61,7 +65,9 @@ namespace PFStar
 
             [NativeDisableUnsafePtrRestriction]
             public NativeArray<int> Counter;
-            
+
+            public BlobAssetReference<GridBlob> GridBlob;
+
             void Execute(
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
@@ -69,6 +75,7 @@ namespace PFStar
                 RefRW<PathRequestAgent> request,
                 RefRW<PFAgentState> state)
             {
+                
                 var reqRO = request.ValueRO;
                 Entity myTarget = reqRO.focus;
                 
@@ -94,6 +101,17 @@ namespace PFStar
                 if (!needsUpdate) return;
                 
                 if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData)) return;
+                
+                float3 targetWorldPos = GridUtils.CoordToWorld(targetData.CurrentCell, GridBlob.Value.Origin, GridBlob.Value.CellSize);
+                float distToTargetSq = math.distancesq(transform.ValueRO.Position, targetWorldPos);
+                
+                if (distToTargetSq < 2.0f) 
+                {
+                    flags &= (byte)~PFAgentsStatus.Significant;
+                    flags &= (byte)~PFAgentsStatus.Find;
+                    state.ValueRW.Flags = flags;
+                    return;
+                }
 
                 int2 actualTargetCell = targetData.CurrentCell;
                 

@@ -22,13 +22,7 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 2000;
-        private const int InnerLoopBatchSize = 64;
-
-        private const int MaxPossibleAgents = 1024;
-        private const int MaxPerFrame = 512;
-        private const float GreedyCoef = 1.5f;
-
+        
         private int _currentBufferSize;
 
         private ComponentLookup<PathRequestAgent> _pathRequestLookup;
@@ -74,22 +68,24 @@ namespace PFStar
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
+            
             _waypointLookup.Update(ref state);
             _gridBlobLookup.Update(ref state);
 
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var settings = SystemAPI.GetComponent<GridSettings>(gridEntity);
+            var gridSettings = SystemAPI.GetComponent<GridSettings>(gridEntity);
 
             var gridBlobRef = _gridBlobLookup[gridEntity].Value;
-            int dimX = settings.Dimensions.x;
-            int dimY = settings.Dimensions.y;
+            int dimX = gridSettings.Dimensions.x;
+            int dimY = gridSettings.Dimensions.y;
 
             int gridSize = dimX * dimY;
 
             if (!_costSoFar.IsCreated && gridSize > 0)
             {
                 _currentBufferSize = gridSize;
-                int totalCapacity = _currentBufferSize * MaxPossibleAgents;
+                int totalCapacity = _currentBufferSize * pfSettings.MaxPossibleAgents;
 
                 _searchVersions = new NativeArray<int>(totalCapacity, Allocator.Persistent);
                 _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
@@ -113,7 +109,7 @@ namespace PFStar
             
             sortableList.Sort(new RequestComparer());
 
-            int agentsToProcess = math.min(sortableList.Length, MaxPerFrame);
+            int agentsToProcess = math.min(sortableList.Length, pfSettings.MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PathRequestAgent>(agentsToProcess, Allocator.TempJob);
 
@@ -134,10 +130,12 @@ namespace PFStar
                 PathRequestLookup = _pathRequestLookup,
                 PathArray = pathArray,
                 ECB = parallelEcb
-            }.Schedule(agentsToProcess, InnerLoopBatchSize, state.Dependency);
+            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, state.Dependency);
 
             var findHandle = new FindPathAStarJob
             {
+                GreedyCoef = pfSettings.GreedyCoef,
+                IterationLimit = pfSettings.IterationLimit,
                 GridBlob = gridBlobRef,
                 DimX = dimX,
                 DimY = dimY,
@@ -152,7 +150,7 @@ namespace PFStar
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
                 ECB = parallelEcb
-            }.Schedule(agentsToProcess, InnerLoopBatchSize, collectHandle);
+            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, collectHandle);
 
             state.Dependency = findHandle;
 
@@ -206,7 +204,10 @@ namespace PFStar
             public int DimX;
             public int DimY;
             public int GridStride;
-
+            
+            public float GreedyCoef;
+            public int IterationLimit;
+            
             public int CurrentFrame;
 
             public EntityCommandBuffer.ParallelWriter ECB;
@@ -255,6 +256,8 @@ namespace PFStar
 
                 var box = new BoxData
                 {
+                    GreedyCoef = GreedyCoef,
+                    IterationLimit = IterationLimit,
                     GridBlob = GridBlob,
                     Waypoints = waypoints,
                     DimX = DimX, DimY = DimY,
@@ -297,6 +300,10 @@ namespace PFStar
 
                 public NativeSlice<int> SearchVersions;
                 public int SearchID;
+
+                public float GreedyCoef;
+                public int IterationLimit;
+
             }
 
             private bool FindPath(ref BoxData box)
@@ -318,7 +325,7 @@ namespace PFStar
                 box.SearchVersions[startIdx] = box.SearchID;
 
                 var H = GridUtils.H_Octile(box.StartPos, box.Destination);
-                float weightedH = H * GreedyCoef;
+                float weightedH = H * box.GreedyCoef;
                 box.OpenSet.Push(new MinHeapNode(box.StartPos, weightedH, weightedH));
                 float minH = float.MaxValue;
 
@@ -327,7 +334,7 @@ namespace PFStar
                 int counter = 0;
                 while (box.OpenSet.HasNext())
                 {
-                    if (counter++ > IterationLimit)
+                    if (counter++ > box.IterationLimit)
                     {
                         box.Destination = bestPointSoFar;
                         return true;
