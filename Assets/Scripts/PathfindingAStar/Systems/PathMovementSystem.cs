@@ -10,6 +10,9 @@ namespace PFStar
     [BurstCompile] 
     public partial struct PathMovementSystem : ISystem 
     {
+        private const float Threshold = 0.001f;
+        private const float RotSpeed = 10f;
+        
         [BurstCompile]
         public void OnUpdate(ref SystemState state) 
         {
@@ -34,21 +37,34 @@ namespace PFStar
                 float3 currentPos = transform.Position;
 
                 float3 toTarget = targetPos - currentPos;
-
+                
                 float distSq = math.lengthsq(toTarget);
-                float step = moveData.speed * DeltaTime;
-
-                if (distSq <= step * step)
+                
+                if (distSq > Threshold) 
                 {
-                    transform.Position = targetPos;
-                    way.RemoveAt(lastIndex);
+                    float3 direction = toTarget * math.rsqrt(distSq);
+                    if (distSq < 100f) 
+                    {
+                        quaternion targetRotation = quaternion.LookRotationSafe(direction, math.up());
+                        transform.Rotation = math.slerp(transform.Rotation, targetRotation, DeltaTime * RotSpeed);
+                    }
+                    
+                    float step = moveData.speed * DeltaTime;
+
+                    if (distSq <= step * step)
+                    {
+                        transform.Position = targetPos;
+                        way.RemoveAt(lastIndex);
+                    }
+                    else
+                    {
+                        transform.Position = currentPos + direction * step;
+                        moveData.targetCellPos = targetPos;
+                    }
                 }
                 else
                 {
-                    float3 dir = toTarget * math.rsqrt(distSq);
-                    transform.Position = currentPos + dir * step;
-
-                    moveData.targetCellPos = targetPos;
+                    way.RemoveAt(lastIndex);
                 }
             }
         }
