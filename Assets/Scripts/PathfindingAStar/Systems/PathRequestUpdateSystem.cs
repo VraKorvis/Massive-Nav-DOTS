@@ -11,7 +11,7 @@ namespace PFStar
     [BurstCompile]
     public unsafe partial struct PathRequestUpdateSystem : ISystem
     {
-        private const int MaxRequestsPerFrame = 256;
+        private const int MaxRequestsPerFrame = 512;
         private NativeArray<int> _requestsCounter;
 
         public void OnCreate(ref SystemState state)
@@ -60,8 +60,9 @@ namespace PFStar
             public float CurrentTime;
             public int MaxRequests;
 
+            [NativeDisableUnsafePtrRestriction]
             public NativeArray<int> Counter;
-
+            
             void Execute(
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
@@ -72,15 +73,19 @@ namespace PFStar
                 EnabledRefRW<PathAgentStatusFindTag> findTag,
                 EnabledRefRW<PathAgentStatusProcessTag> processTag)
             {
-                Entity myTarget = request.ValueRO.focus;
+                var reqRO = request.ValueRO;
+                Entity myTarget = reqRO.focus;
 
-                bool isUrgent = sigTag.ValueRO;;
+                bool isUrgent = sigTag.ValueRO;
 
-                if (!isUrgent && CurrentTime < request.ValueRO.NextAllowedUpdateTime) return;
+                if (!isUrgent && CurrentTime < reqRO.NextAllowedUpdateTime) return;
                 bool isIdle = noneTag.ValueRO;
+                
+                if (!TargetDataLookup.HasComponent(myTarget))
+                    return;
 
                 bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
-                bool cooldownOver = CurrentTime >= request.ValueRO.NextAllowedUpdateTime;
+                bool cooldownOver = CurrentTime >= reqRO.NextAllowedUpdateTime;
 
                 bool needsUpdate = targetMoved || isUrgent || (isIdle && cooldownOver);
 
@@ -90,7 +95,7 @@ namespace PFStar
 
                 int2 actualTargetCell = targetData.CurrentCell;
                 
-                if (request.ValueRO.destination.Equals(actualTargetCell))
+                if (reqRO.destination.Equals(actualTargetCell))
                 {
                     sigTag.ValueRW = false;
                     return;

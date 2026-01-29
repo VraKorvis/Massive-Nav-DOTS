@@ -22,11 +22,11 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 1000;
+        private const int IterationLimit = 2000;
         private const int InnerLoopBatchSize = 64;
 
         private const int MaxPossibleAgents = 1024;
-        private const int MaxPerFrame = 256;
+        private const int MaxPerFrame = 512;
         private const float GreedyCoef = 1.5f;
 
         private int _currentBufferSize;

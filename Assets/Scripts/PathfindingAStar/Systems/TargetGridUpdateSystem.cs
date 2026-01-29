@@ -48,6 +48,7 @@ namespace PFStar
                     {
                         targetData.ValueRW.LastSignificantCell = newCoord;
                         SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, true);
+                        anyTargetMoved = true;
                     }
                     else
                     {
