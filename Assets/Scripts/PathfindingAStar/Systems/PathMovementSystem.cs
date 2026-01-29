@@ -25,8 +25,7 @@ namespace PFStar
             private void Execute(
                 ref DynamicBuffer<Waypoint> way,
                 ref MoveSettings moveData,
-                ref LocalTransform transform,
-                in PathAgentStatusProcessTag status)
+                ref LocalTransform transform)
             {
                 if (way.IsEmpty) return;
 

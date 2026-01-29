@@ -16,28 +16,43 @@ namespace PFStar
     {
         public AgentStatus Value;
     }
+    
+/*
+Binary      Decimal   Flags set
+0000 0000   0         not used
+0000 0001   1         None
+0000 0010   2         Significant
+0000 0100   4         Find
+0000 1000   8         Process
+0000 0011   3         None + Significant
+0000 0101   5         None + Find
+0000 1001   9         None + Process
+0000 0110   6         Significant + Find
+0000 1010   10        Significant + Process
+0000 1100   12        Find + Process
+0000 0111   7         None + Significant + Find
+0000 1011   11        None + Significant + Process
+0000 1101   13        None + Find + Process
+0000 1110   14        Significant + Find + Process
+0000 1111   15        None + Significant + Find + Process
+*/
 
-    public struct PathAgentStatusFindTag : IComponentData, IEnableableComponent
+    [Flags]
+    public enum PFAgentsStatus : byte
     {
+        None        = 1 << 0,  // 0000 0001
+        Significant = 1 << 1,  // 0000 0010
+        Find        = 1 << 2,  // 0000 0100
+        Process     = 1 << 3,  // 0000 1000
     }
+    
+    public struct PFAgentState : IComponentData
+    {
+        public byte Flags;
+    }
+    
 
     public struct PathAgentStatusAddPathRequestTag : IComponentData, IEnableableComponent
-    {
-    }
-
-    public struct PathAgentStatusSignificantMoveTag : IComponentData, IEnableableComponent
-    {
-    }
-
-    public struct PathAgentStatusNoneTag : IComponentData, IEnableableComponent
-    {
-    }
-
-    public struct PathAgentStatusReadyTag : IComponentData, IEnableableComponent
-    {
-    }
-
-    public struct PathAgentStatusProcessTag : IComponentData, IEnableableComponent
     {
     }
 
@@ -87,15 +102,9 @@ namespace PFStar
 
             AddComponent<PathAgentStatusAddPathRequestTag>(entity);
 
-            AddComponent<PathAgentStatusFindTag>(entity);
-            AddComponent<PathAgentStatusProcessTag>(entity);
-            AddComponent<PathAgentStatusNoneTag>(entity);
-            AddComponent<PathAgentStatusSignificantMoveTag>(entity);
-
-            SetComponentEnabled<PathAgentStatusFindTag>(entity, true);
-            SetComponentEnabled<PathAgentStatusProcessTag>(entity, false);
-            SetComponentEnabled<PathAgentStatusNoneTag>(entity, false);
-            SetComponentEnabled<PathAgentStatusSignificantMoveTag>(entity, true);
+            AddComponent(entity, new PFAgentState {
+                Flags = (byte)PFAgentsStatus.Significant 
+            });
 
             AddBuffer<Waypoint>(entity);
         }

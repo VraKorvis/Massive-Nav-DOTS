@@ -7,10 +7,8 @@ using UnityEngine.InputSystem;
 namespace Gameplay.Player
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
-    [BurstCompile]
     public partial struct LeaderMovementSystem : ISystem
     {
-        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             var keyboard = Keyboard.current;
@@ -32,7 +30,6 @@ namespace Gameplay.Player
             state.Dependency = moveJob.ScheduleParallel(state.Dependency);
         }
 
-        [BurstCompile]
         public partial struct MoveJob : IJobEntity
         {
             public float3 Input;

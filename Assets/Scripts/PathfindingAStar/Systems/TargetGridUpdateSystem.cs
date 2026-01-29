@@ -5,24 +5,21 @@ using Unity.Transforms;
 
 namespace PFStar
 {
-    [UpdateInGroup(typeof(InitializationSystemGroup))] 
+    [UpdateInGroup(typeof(InitializationSystemGroup))]
     [BurstCompile]
     public partial struct TargetGridUpdateSystem : ISystem
     {
         private const int Threshold = 10;
-        
+
         private EntityQuery _allAgentsQuery;
-        
+
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
-            _allAgentsQuery = state.GetEntityQuery(new EntityQueryDesc
-            {
-                All = new [] { ComponentType.ReadWrite<PathAgentStatusSignificantMoveTag>() },
-                None = new [] { ComponentType.ReadOnly<PathAgentStatusFindTag>() }
-            });
-            
+            _allAgentsQuery = state.GetEntityQuery(
+                ComponentType.ReadWrite<PFAgentState>()
+            );
         }
 
         [BurstCompile]
@@ -30,18 +27,18 @@ namespace PFStar
         {
             var grid = SystemAPI.GetSingleton<GridSettings>();
             bool anyTargetMoved = false;
-            
-            foreach (var (transform, targetData, entity) in 
+
+            foreach (var (transform, targetData, entity) in
                      SystemAPI.Query<RefRO<LocalTransform>, RefRW<NavigationTargetGridData>>()
                          .WithEntityAccess())
             {
                 int2 newCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin);
-            
+
                 if (!newCoord.Equals(targetData.ValueRO.CurrentCell))
                 {
                     targetData.ValueRW.CurrentCell = newCoord;
-            
-                    int distance = math.abs(newCoord.x - targetData.ValueRO.LastSignificantCell.x) + 
+
+                    int distance = math.abs(newCoord.x - targetData.ValueRO.LastSignificantCell.x) +
                                    math.abs(newCoord.y - targetData.ValueRO.LastSignificantCell.y);
 
                     if (distance >= Threshold)
@@ -59,14 +56,28 @@ namespace PFStar
                 {
                     SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, false);
                 }
-                
             }
-            
+
+            //todo temp duck tape, need logic
             if (anyTargetMoved)
             {
-                state.EntityManager.SetComponentEnabled<PathAgentStatusSignificantMoveTag>(_allAgentsQuery, true);
+                state.Dependency = new SetSignificantMassiveJob().ScheduleParallel(_allAgentsQuery, state.Dependency);
             }
-            
+        }
+
+        [BurstCompile]
+        public partial struct SetSignificantMassiveJob : IJobEntity
+        {
+            void Execute(RefRW<PFAgentState> state)
+            {
+                var flags = state.ValueRO.Flags;
+        
+                flags &= (byte)~PFAgentsStatus.Find;
+                flags &= (byte)~PFAgentsStatus.Process;
+                flags |= (byte)PFAgentsStatus.Significant;
+        
+                state.ValueRW.Flags = flags;
+            }
         }
     }
 }

@@ -11,7 +11,7 @@ namespace PFStar
     [BurstCompile]
     public unsafe partial struct PathRequestUpdateSystem : ISystem
     {
-        private const int MaxRequestsPerFrame = 512;
+        private const int MaxRequestsPerFrame = 10000;
         private NativeArray<int> _requestsCounter;
 
         public void OnCreate(ref SystemState state)
@@ -49,7 +49,6 @@ namespace PFStar
             state.Dependency = job.ScheduleParallel(state.Dependency);
         }
 
-        [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]    
         [BurstCompile]
         public partial struct PathRequestStatusJob : IJobEntity
         {
@@ -68,18 +67,21 @@ namespace PFStar
                 [ChunkIndexInQuery] int chunkIndex,
                 RefRO<LocalTransform> transform,
                 RefRW<PathRequestAgent> request,
-                EnabledRefRW<PathAgentStatusNoneTag> noneTag,
-                EnabledRefRW<PathAgentStatusSignificantMoveTag> sigTag,
-                EnabledRefRW<PathAgentStatusFindTag> findTag,
-                EnabledRefRW<PathAgentStatusProcessTag> processTag)
+                RefRW<PFAgentState> state)
             {
                 var reqRO = request.ValueRO;
                 Entity myTarget = reqRO.focus;
-
-                bool isUrgent = sigTag.ValueRO;
-
-                if (!isUrgent && CurrentTime < reqRO.NextAllowedUpdateTime) return;
-                bool isIdle = noneTag.ValueRO;
+                
+                var flags = state.ValueRO.Flags;
+                
+                if ((flags & (byte)PFAgentsStatus.Find) != 0) return;
+                
+                bool isUrgent = (flags & (byte)PFAgentsStatus.Significant) != 0;
+                
+                if (!isUrgent && CurrentTime < reqRO.NextAllowedUpdateTime)
+                    return;
+                
+                bool isIdle = (flags & (byte)PFAgentsStatus.None) != 0; 
                 
                 if (!TargetDataLookup.HasComponent(myTarget))
                     return;
@@ -97,7 +99,8 @@ namespace PFStar
                 
                 if (reqRO.destination.Equals(actualTargetCell))
                 {
-                    sigTag.ValueRW = false;
+                    flags &= (byte)~PFAgentsStatus.Significant;
+                    state.ValueRW.Flags = flags;
                     return;
                 }
                 
@@ -112,10 +115,12 @@ namespace PFStar
                 float offset = (entity.Index % 50) * 0.01f;
                 request.ValueRW.NextAllowedUpdateTime = CurrentTime + 0.5f + offset;
                 
-                findTag.ValueRW = true;
-                noneTag.ValueRW = false;
-                processTag.ValueRW = false;
-                sigTag.ValueRW = false;
+                flags |= (byte)PFAgentsStatus.Find;
+                flags &= (byte)~PFAgentsStatus.None;
+                flags &= (byte)~PFAgentsStatus.Process;
+                flags &= (byte)~PFAgentsStatus.Significant;
+
+                state.ValueRW.Flags = flags;
             }
         }
     }

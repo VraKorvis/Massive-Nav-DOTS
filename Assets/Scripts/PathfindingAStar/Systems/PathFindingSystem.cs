@@ -22,7 +22,7 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 2000;
+        private const int IterationLimit = 1000;
         private const int InnerLoopBatchSize = 64;
 
         private const int MaxPossibleAgents = 1024;
@@ -44,7 +44,7 @@ namespace PFStar
             _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAllRW<PathRequestAgent>()
                 .WithAllRW<PathRequestMetadata>()
-                .WithAll<PathAgentStatusFindTag>()
+                .WithAll<PFAgentState>()
                 .Build(ref state);
 
             _gridQuery = new EntityQueryBuilder(Allocator.Temp)
@@ -66,7 +66,7 @@ namespace PFStar
                 [7] = new int2(-1, -1)
             };
             _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
-            
+
             _pathRequestLookup = state.GetComponentLookup<PathRequestAgent>(true);
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
         }
@@ -76,12 +76,12 @@ namespace PFStar
         {
             _waypointLookup.Update(ref state);
             _gridBlobLookup.Update(ref state);
-            
+            _pathRequestLookup.Update(ref state);
+
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var settings = SystemAPI.GetComponent<GridSettings>(gridEntity);
 
-            var gridBlobRef = _gridBlobLookup[gridEntity].Value; 
-            
+            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
             int dimX = settings.Dimensions.x;
             int dimY = settings.Dimensions.y;
 
@@ -98,25 +98,38 @@ namespace PFStar
                 _openSet = new NativeMinHeap(totalCapacity, Allocator.Persistent);
             }
 
-            if (!_costSoFar.IsCreated) return;
-
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
 
             var entities = _pathRequestQuery.ToEntityArray(Allocator.TempJob);
-            var metadata = _pathRequestQuery.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
-
+            
             if (entities.Length == 0) return;
-
-            var sortableList = new NativeList<SortableRequest>(entities.Length, Allocator.TempJob);
+            
+            var metadata = _pathRequestQuery.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
+            var states = _pathRequestQuery.ToComponentDataArray<PFAgentState>(Allocator.TempJob);
+            
+            var sortableList = new NativeList<SortableRequest>(totalWaiting, Allocator.TempJob);
             for (int i = 0; i < entities.Length; i++)
             {
-                sortableList.Add(new SortableRequest { Entity = entities[i], RequestTime = metadata[i].RequestTime });
+                if ((states[i].Flags & (byte)PFAgentsStatus.Find) != 0)
+                {
+                    sortableList.Add(new SortableRequest
+                    {
+                        Entity = entities[i],
+                        RequestTime = metadata[i].RequestTime
+                    });
+                }
+            }
+            
+            if (sortableList.Length == 0)
+            {
+                entities.Dispose(); metadata.Dispose(); states.Dispose(); sortableList.Dispose();
+                return;
             }
 
             sortableList.Sort(new RequestComparer());
 
-            int agentsToProcess = math.min(totalWaiting, MaxPerFrame);
+            int agentsToProcess = math.min(sortableList.Length, MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PathRequestAgent>(agentsToProcess, Allocator.TempJob);
 
@@ -128,11 +141,11 @@ namespace PFStar
             entities.Dispose();
             metadata.Dispose();
             sortableList.Dispose();
+            states.Dispose(); 
 
             var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
             var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
             var parallelEcb = ecb.AsParallelWriter();
-            _pathRequestLookup.Update(ref state);
 
             var collectHandle = new CollectSortedPathsJob
             {
@@ -167,16 +180,6 @@ namespace PFStar
         }
 
         [BurstCompile]
-        public void OnDestroy(ref SystemState state)
-        {
-            if (_neighbours.IsCreated) _neighbours.Dispose();
-            if (_costSoFar.IsCreated) _costSoFar.Dispose();
-            if (_cameFrom.IsCreated) _cameFrom.Dispose();
-            if (_openSet.IsCreated) _openSet.Dispose();
-            if (_searchVersions.IsCreated) _searchVersions.Dispose();
-        }
-
-        [BurstCompile]
         private struct CollectSortedPathsJob : IJobParallelFor
         {
             [ReadOnly] public NativeArray<Entity> EntitiesToProcess;
@@ -191,10 +194,9 @@ namespace PFStar
                 PathRequestAgent path = PathRequestLookup[entity];
 
                 PathArray[index] = path;
+                var flags = PFAgentsStatus.Process;
 
-                ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, entity, false);
-                ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, entity, true);
-                ECB.SetComponent(index, entity, new PathAgentStatus { Value = AgentStatus.Process });
+                ECB.SetComponent(index, entity, new PFAgentState { Flags = (byte)flags });
             }
         }
 
@@ -212,7 +214,7 @@ namespace PFStar
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
 
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
-            [ReadOnly] public ComponentLookup<PathRequestAgent> ActualPathLookup; 
+            [ReadOnly] public ComponentLookup<PathRequestAgent> ActualPathLookup;
 
             [ReadOnly] public NativeArray<PathRequestAgent> PathList;
 
@@ -240,7 +242,7 @@ namespace PFStar
                 openSetSlice.Clear();
 
                 if (request.owner == Entity.Null) return;
-                
+
                 if (ActualPathLookup.HasComponent(request.owner))
                 {
                     request.destination = ActualPathLookup[request.owner].destination;
@@ -272,12 +274,12 @@ namespace PFStar
                 }
                 else
                 {
-                    ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
+                    // ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
 
-                    ECB.SetComponentEnabled<PathAgentStatusFindTag>(index, request.owner, false);
-                    ECB.SetComponentEnabled<PathAgentStatusProcessTag>(index, request.owner, false);
-
-                    ECB.SetComponentEnabled<PathAgentStatusNoneTag>(index, request.owner, true);
+                    ECB.SetComponent(index, request.owner, new PFAgentState
+                    {
+                        Flags = (byte)PFAgentsStatus.None
+                    });
                 }
             }
 
@@ -300,26 +302,28 @@ namespace PFStar
             private bool FindPath(ref BoxData box)
             {
                 ref var grid = ref box.GridBlob.Value;
-                
+
                 if (box.StartPos.Equals(box.Destination))
                 {
                     var indexCell = GridUtils.CoordToIndex(box.Destination, box.DimX);
-                    box.Waypoints.Add(new Waypoint { 
-                        point = GridUtils.CoordToWorld(ref grid, indexCell) 
-                    });                    return false;
+                    box.Waypoints.Add(new Waypoint
+                    {
+                        point = GridUtils.CoordToWorld(ref grid, indexCell)
+                    });
+                    return false;
                 }
 
                 var startIdx = GridUtils.CoordToIndex(box.StartPos, box.DimX);
                 box.CostSoFar[startIdx] = 0;
                 box.SearchVersions[startIdx] = box.SearchID;
-                
-                var H = GridUtils.H_Octile(box.StartPos, box.Destination); 
+
+                var H = GridUtils.H_Octile(box.StartPos, box.Destination);
                 float weightedH = H * GreedyCoef;
                 box.OpenSet.Push(new MinHeapNode(box.StartPos, weightedH, weightedH));
                 float minH = float.MaxValue;
-                
+
                 int2 bestPointSoFar = box.StartPos;
-                
+
                 int counter = 0;
                 while (box.OpenSet.HasNext())
                 {
@@ -328,15 +332,15 @@ namespace PFStar
                         box.Destination = bestPointSoFar;
                         return true;
                     }
-                    
+
                     var current = box.OpenSet.Pop();
-                    
+
                     if (current.DistanceToGoal < minH)
                     {
                         minH = current.DistanceToGoal;
                         bestPointSoFar = current.Position;
                     }
-                    
+
                     if (current.Position.Equals(box.Destination)) return true;
 
                     var fromIndex = GridUtils.CoordToIndex(current.Position, box.DimX);
@@ -359,13 +363,13 @@ namespace PFStar
                         float oldCost = isVisited ? box.CostSoFar[toIndex] : float.MaxValue;
 
                         if (oldCost > 0 && oldCost <= newCost) continue;
-                        
+
                         box.CostSoFar[toIndex] = newCost;
                         box.SearchVersions[toIndex] = box.SearchID;
                         box.CameFrom[toIndex] = current.Position;
                         var h = GridUtils.H_Octile(nextPosition, box.Destination);
                         weightedH = h * GreedyCoef;
-                        
+
                         float f = newCost + weightedH;
                         box.OpenSet.Push(new MinHeapNode(nextPosition, f, weightedH));
                     }
@@ -394,13 +398,28 @@ namespace PFStar
                 {
                     return float.PositiveInfinity;
                 }
-                
+
                 //TODO add Weights
                 // float baseWeight = grid.Weights[gridIndex];
                 float baseWeight = 1;
                 float distanceMultiplier = (neighborIndex < 4) ? 1f : 1.414f;
                 return baseWeight * distanceMultiplier;
             }
+        }
+
+        [BurstCompile]
+        public void OnDestroy(ref SystemState state)
+        {
+            DisposeAll();
+        }
+
+        private void DisposeAll()
+        {
+            if (_neighbours.IsCreated) _neighbours.Dispose();
+            if (_costSoFar.IsCreated) _costSoFar.Dispose();
+            if (_cameFrom.IsCreated) _cameFrom.Dispose();
+            if (_searchVersions.IsCreated) _searchVersions.Dispose();
+            if (_openSet.IsCreated) _openSet.Dispose();
         }
     }
 }
