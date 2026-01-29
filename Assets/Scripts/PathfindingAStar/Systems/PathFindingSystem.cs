@@ -22,7 +22,7 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        private const int IterationLimit = 1000;
+        private const int IterationLimit = 2000;
         private const int InnerLoopBatchSize = 64;
 
         private const int MaxPossibleAgents = 1024;
@@ -76,7 +76,6 @@ namespace PFStar
         {
             _waypointLookup.Update(ref state);
             _gridBlobLookup.Update(ref state);
-            _pathRequestLookup.Update(ref state);
 
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var settings = SystemAPI.GetComponent<GridSettings>(gridEntity);
@@ -100,33 +99,18 @@ namespace PFStar
 
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
-
-            var entities = _pathRequestQuery.ToEntityArray(Allocator.TempJob);
-            
-            if (entities.Length == 0) return;
-            
-            var metadata = _pathRequestQuery.ToComponentDataArray<PathRequestMetadata>(Allocator.TempJob);
-            var states = _pathRequestQuery.ToComponentDataArray<PFAgentState>(Allocator.TempJob);
             
             var sortableList = new NativeList<SortableRequest>(totalWaiting, Allocator.TempJob);
-            for (int i = 0; i < entities.Length; i++)
-            {
-                if ((states[i].Flags & (byte)PFAgentsStatus.Find) != 0)
-                {
-                    sortableList.Add(new SortableRequest
-                    {
-                        Entity = entities[i],
-                        RequestTime = metadata[i].RequestTime
-                    });
-                }
-            }
-            
-            if (sortableList.Length == 0)
-            {
-                entities.Dispose(); metadata.Dispose(); states.Dispose(); sortableList.Dispose();
-                return;
-            }
 
+            var collectJob = new CollectRequestsJob 
+            { 
+                SortableList = sortableList.AsParallelWriter() 
+            }.ScheduleParallel(_pathRequestQuery, state.Dependency);
+    
+            state.Dependency = collectJob;
+
+            state.Dependency.Complete();
+            
             sortableList.Sort(new RequestComparer());
 
             int agentsToProcess = math.min(sortableList.Length, MaxPerFrame);
@@ -137,15 +121,12 @@ namespace PFStar
             {
                 processingEntities[i] = sortableList[i].Entity;
             }
-
-            entities.Dispose();
-            metadata.Dispose();
-            sortableList.Dispose();
-            states.Dispose(); 
-
+            
             var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
             var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
             var parallelEcb = ecb.AsParallelWriter();
+
+            _pathRequestLookup.Update(ref state);
 
             var collectHandle = new CollectSortedPathsJob
             {
@@ -177,6 +158,25 @@ namespace PFStar
 
             processingEntities.Dispose(state.Dependency);
             pathArray.Dispose(state.Dependency);
+            sortableList.Dispose();
+        }
+        
+        [BurstCompile]
+        public partial struct CollectRequestsJob : IJobEntity
+        {
+            public NativeList<SortableRequest>.ParallelWriter SortableList;
+            
+            void Execute(Entity entity, in PathRequestMetadata metadata, in PFAgentState state)
+            {
+                if ((state.Flags & (byte)PFAgentsStatus.Find) != 0)
+                {
+                    SortableList.AddNoResize(new SortableRequest 
+                    { 
+                        Entity = entity, 
+                        RequestTime = metadata.RequestTime 
+                    });
+                }
+            }
         }
 
         [BurstCompile]
