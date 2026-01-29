@@ -23,6 +23,7 @@ namespace PFStar
     {
         public int2 dimensions;
         public float cellSize = 1f;
+        public int inflationRadius = 1;
 
         public class UniversalGridBaker : Baker<UniversalGridAuthoring>
         {
@@ -65,21 +66,57 @@ namespace PFStar
                     float3 minP = wallPos - (wallScale * 0.5f);
                     float3 maxP = wallPos + (wallScale * 0.5f);
 
-                    int2 minCoord = GridUtils.WorldToCellCoord(minP, cornerOrigin);
-                    int2 maxCoord = GridUtils.WorldToCellCoord(maxP, cornerOrigin);
+                    int2 minCoord = GridUtils.WorldToCellCoord(minP - new float3(authoring.cellSize), cornerOrigin);
+                    int2 maxCoord = GridUtils.WorldToCellCoord(maxP + new float3(authoring.cellSize), cornerOrigin);
+                    
+                    int startX = math.max(0, minCoord.x - 1);
+                    int endX = math.min(authoring.dimensions.x - 1, maxCoord.x + 1);
+                    int startY = math.max(0, minCoord.y - 1);
+                    int endY = math.min(authoring.dimensions.y - 1, maxCoord.y + 1);
 
-                    int startX = math.max(0, minCoord.x);
-                    int endX = math.min(authoring.dimensions.x - 1, maxCoord.x);
-                    int startY = math.max(0, minCoord.y);
-                    int endY = math.min(authoring.dimensions.y - 1, maxCoord.y);
-
-                    for (int y = startY; y <= endY; y++)
+                    for (int y = math.max(0, minCoord.y); y <= math.min(authoring.dimensions.y - 1, maxCoord.y); y++)
                     {
-                        for (int x = startX; x <= endX; x++)
+                        for (int x = math.max(0, minCoord.x); x <= math.min(authoring.dimensions.x - 1, maxCoord.x); x++)
                         {
-                            int index = GridUtils.CoordToIndex(new int2(x, y), authoring.dimensions.x);
-                            cells[index] = CellType.Wall;
-                            weights[index] = float.PositiveInfinity;
+                            float3 cellWorldPos = cornerOrigin + new float3(x * authoring.cellSize, 0, y * authoring.cellSize);
+            
+                            float3 closestPointOnWall = math.clamp(cellWorldPos, minP, maxP);
+                            float distToWall = math.distance(cellWorldPos, closestPointOnWall);
+                            
+                            if (distToWall < authoring.cellSize * 0.4f) 
+                            {
+                                int index = GridUtils.CoordToIndex(new int2(x, y), authoring.dimensions.x);
+                                cells[index] = CellType.Wall;
+                                weights[index] = float.PositiveInfinity;
+                            }
+                        }
+                    }
+                }
+                
+                // TODO Obstacle Swelling, weights not impl right now
+                for (int i = 0; i < totalCells; i++)
+                {
+                    if (cells[i] == CellType.Wall)
+                    {
+                        int2 wallCoord = GridUtils.IndexToCoord(i, authoring.dimensions.x);
+        
+                        for (int dy = -authoring.inflationRadius; dy <= authoring.inflationRadius; dy++)
+                        {
+                            for (int dx = -authoring.inflationRadius; dx <= authoring.inflationRadius; dx++)
+                            {
+                                int2 neighborCoord = wallCoord + new int2(dx, dy);
+                
+                                if (neighborCoord.x >= 0 && neighborCoord.x < authoring.dimensions.x &&
+                                    neighborCoord.y >= 0 && neighborCoord.y < authoring.dimensions.y)
+                                {
+                                    int neighborIndex = GridUtils.CoordToIndex(neighborCoord, authoring.dimensions.x);
+                    
+                                    if (cells[neighborIndex] != CellType.Wall)
+                                    {
+                                        weights[neighborIndex] = math.max(weights[neighborIndex], 5.0f);
+                                    }
+                                }
+                            }
                         }
                     }
                 }
