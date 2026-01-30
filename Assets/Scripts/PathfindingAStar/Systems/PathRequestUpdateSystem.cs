@@ -1,3 +1,4 @@
+using System.Runtime.CompilerServices;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -33,7 +34,7 @@ namespace PFStar
         {
             _requestsCounter[0] = 0;
             if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
-            
+
             var job = new PathRequestStatusJob
             {
                 TargetDataLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
@@ -61,8 +62,7 @@ namespace PFStar
             public float CurrentTime;
             public int MaxRequests;
 
-            [NativeDisableUnsafePtrRestriction]
-            public NativeArray<int> Counter;
+            [NativeDisableUnsafePtrRestriction] public NativeArray<int> Counter;
             
             void Execute(
                 Entity entity,
@@ -71,21 +71,20 @@ namespace PFStar
                 RefRW<PathRequestAgent> request,
                 RefRW<PFAgentState> state)
             {
-                
                 var reqRO = request.ValueRO;
                 Entity myTarget = reqRO.focus;
-                
+
                 var flags = state.ValueRO.Flags;
-                
+
                 if ((flags & (byte)PFAgentsStatus.Find) != 0) return;
-                
+
                 bool isUrgent = (flags & (byte)PFAgentsStatus.Significant) != 0;
-                
+
                 if (!isUrgent && CurrentTime < reqRO.NextAllowedUpdateTime)
                     return;
-                
-                bool isIdle = (flags & (byte)PFAgentsStatus.None) != 0; 
-                
+
+                bool isIdle = (flags & (byte)PFAgentsStatus.None) != 0;
+
                 if (!TargetDataLookup.HasComponent(myTarget))
                     return;
 
@@ -101,43 +100,60 @@ namespace PFStar
                     if (TargetDataLookup.TryGetComponent(myTarget, out targetData))
                     {
                         actualTargetCell = targetData.CurrentCell;
-                        int distToTarget = math.abs(actualTargetCell.x - reqRO.destination.x) + 
-                                           math.abs(actualTargetCell.y - reqRO.destination.y);
-        
-                        if (distToTarget > Threshold) return;
+                        if (IsTargetTooFar(actualTargetCell, reqRO.destination, Threshold)) return;
                     }
                 }
                 else
                 {
                     if (!TargetDataLookup.TryGetComponent(myTarget, out targetData)) return;
                 }
-                
+
                 actualTargetCell = targetData.CurrentCell;
-                
+
                 if (reqRO.destination.Equals(actualTargetCell))
                 {
                     flags &= (byte)~PFAgentsStatus.Significant;
                     state.ValueRW.Flags = flags;
                     return;
                 }
-                
+
                 int* ptr = (int*)Counter.GetUnsafePtr();
                 int currentRequestIndex = System.Threading.Interlocked.Increment(ref ptr[0]);
-
                 if (currentRequestIndex > MaxRequests) return;
 
-                request.ValueRW.destination = targetData.CurrentCell;
-                request.ValueRW.startCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, GridOrigin);
+                FillRequest(ref request.ValueRW, targetData.CurrentCell, transform.ValueRO.Position, GridOrigin,
+                    entity.Index, CurrentTime);
+                SetFlagsAfterRequest(ref flags);
+                state.ValueRW.Flags = flags;
+            }
 
-                float jitter = (entity.Index % 32) * 0.02f; 
-                request.ValueRW.NextAllowedUpdateTime = CurrentTime + 0.3f + jitter;
-                
+            [MethodImpl(MethodImplOptions
+                .AggressiveInlining)]
+            private bool IsTargetTooFar(int2 targetCell, int2 currentDestination, int threshold)
+            {
+                int dist = math.abs(targetCell.x - currentDestination.x) +
+                           math.abs(targetCell.y - currentDestination.y);
+                return dist > threshold;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void FillRequest(ref PathRequestAgent req, int2 targetCell, float3 pos, float3 origin,
+                int entityIndex, float time)
+            {
+                req.destination = targetCell;
+                req.startCoord = GridUtils.WorldToCellCoord(pos, origin);
+
+                float jitter = (entityIndex % 32) * 0.02f;
+                req.NextAllowedUpdateTime = time + 0.3f + jitter;
+            }
+
+            [MethodImpl(MethodImplOptions.AggressiveInlining)]
+            private void SetFlagsAfterRequest(ref byte flags)
+            {
                 flags |= (byte)PFAgentsStatus.Find;
                 flags &= (byte)~PFAgentsStatus.None;
                 flags &= (byte)~PFAgentsStatus.Process;
                 flags &= (byte)~PFAgentsStatus.Significant;
-
-                state.ValueRW.Flags = flags;
             }
         }
     }
