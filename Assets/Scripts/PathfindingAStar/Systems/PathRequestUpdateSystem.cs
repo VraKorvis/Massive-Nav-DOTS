@@ -33,16 +33,12 @@ namespace PFStar
         {
             _requestsCounter[0] = 0;
             if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
-
-            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridBlobRef = SystemAPI.GetComponent<GridBlobReference>(gridEntity).Value;
             
             var job = new PathRequestStatusJob
             {
                 TargetDataLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
                 TargetChangedLookup = SystemAPI.GetComponentLookup<TargetChangedTag>(true),
 
-                GridBlob = gridBlobRef, 
                 GridOrigin = SystemAPI.GetSingleton<GridSettings>().Origin,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
                 MaxRequests = pfSettings.MaxRequestsPerFrame,
@@ -56,6 +52,8 @@ namespace PFStar
         [BurstCompile]
         public partial struct PathRequestStatusJob : IJobEntity
         {
+            private const int Threshold = 10;
+
             [ReadOnly] public ComponentLookup<NavigationTargetGridData> TargetDataLookup;
             [ReadOnly] public ComponentLookup<TargetChangedTag> TargetChangedLookup;
 
@@ -65,9 +63,7 @@ namespace PFStar
 
             [NativeDisableUnsafePtrRestriction]
             public NativeArray<int> Counter;
-
-            public BlobAssetReference<GridBlob> GridBlob;
-
+            
             void Execute(
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
@@ -98,22 +94,25 @@ namespace PFStar
 
                 bool needsUpdate = targetMoved || isUrgent || (isIdle && cooldownOver);
 
-                if (!needsUpdate) return;
-                
-                if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData)) return;
-                
-                float3 targetWorldPos = GridUtils.CoordToWorld(targetData.CurrentCell, GridBlob.Value.Origin, GridBlob.Value.CellSize);
-                float distToTargetSq = math.distancesq(transform.ValueRO.Position, targetWorldPos);
-                
-                if (distToTargetSq < 2.0f) 
+                NavigationTargetGridData targetData;
+                int2 actualTargetCell;
+                if (!needsUpdate)
                 {
-                    flags &= (byte)~PFAgentsStatus.Significant;
-                    flags &= (byte)~PFAgentsStatus.Find;
-                    state.ValueRW.Flags = flags;
-                    return;
+                    if (TargetDataLookup.TryGetComponent(myTarget, out targetData))
+                    {
+                        actualTargetCell = targetData.CurrentCell;
+                        int distToTarget = math.abs(actualTargetCell.x - reqRO.destination.x) + 
+                                           math.abs(actualTargetCell.y - reqRO.destination.y);
+        
+                        if (distToTarget > Threshold) return;
+                    }
                 }
-
-                int2 actualTargetCell = targetData.CurrentCell;
+                else
+                {
+                    if (!TargetDataLookup.TryGetComponent(myTarget, out targetData)) return;
+                }
+                
+                actualTargetCell = targetData.CurrentCell;
                 
                 if (reqRO.destination.Equals(actualTargetCell))
                 {
@@ -130,8 +129,8 @@ namespace PFStar
                 request.ValueRW.destination = targetData.CurrentCell;
                 request.ValueRW.startCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, GridOrigin);
 
-                float offset = (entity.Index % 50) * 0.01f;
-                request.ValueRW.NextAllowedUpdateTime = CurrentTime + 0.5f + offset;
+                float jitter = (entity.Index % 32) * 0.02f; 
+                request.ValueRW.NextAllowedUpdateTime = CurrentTime + 0.3f + jitter;
                 
                 flags |= (byte)PFAgentsStatus.Find;
                 flags &= (byte)~PFAgentsStatus.None;
