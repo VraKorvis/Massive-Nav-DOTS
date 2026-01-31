@@ -9,6 +9,7 @@ namespace OptRenderer
         public int MaxAntsPerCell;
         public float SafeDistance;
         public bool EnableCulling;
+        public float FadeSpeed;
     }
     
     public class CullingSettingsAuthoring : MonoBehaviour
@@ -16,6 +17,7 @@ namespace OptRenderer
         public int globalThreshold = 50000;
         public int maxAgentsPerCell = 100;
         public float safeDistance = 15f;
+        public float fadeSpeed = 5f;
         public bool enableCulling = true;
 
         public class Baker : Baker<CullingSettingsAuthoring>
@@ -29,6 +31,7 @@ namespace OptRenderer
                     MaxAntsPerCell = authoring.maxAgentsPerCell,
                     EnableCulling = authoring.enableCulling,
                     SafeDistance = authoring.safeDistance,
+                    FadeSpeed = authoring.fadeSpeed,
                 });
             }
         }

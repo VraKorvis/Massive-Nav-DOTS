@@ -115,7 +115,8 @@ Binary      Decimal   Flags set
                 });
             
                 AddComponent(entity, new AgentVisualParams { EffectValue = 1f });
-                AddComponent(entity, new DensityCullingTag());
+                AddComponent(entity, new DensityCullingData());
+                AddComponent(entity, new VisibilityProperty());
 
                 AddBuffer<Waypoint>(entity);
             

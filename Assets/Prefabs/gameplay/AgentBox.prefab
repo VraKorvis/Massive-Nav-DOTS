@@ -69,7 +69,7 @@ MeshRenderer:
   m_RenderingLayerMask: 1
   m_RendererPriority: 0
   m_Materials:
-  - {fileID: 2100000, guid: ca8aa8daf2655403f8f65b539f400c75, type: 2}
+  - {fileID: 2100000, guid: b394da768b4ca4fcaaff46d96d602fdc, type: 2}
   m_StaticBatchInfo:
     firstSubMesh: 0
     subMeshCount: 0
@@ -141,5 +141,5 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PFStar.MoveSettingsAuthoring
   isMoving: 0
-  speed: 1
+  speed: 6.3
   startDelay: 0.2
