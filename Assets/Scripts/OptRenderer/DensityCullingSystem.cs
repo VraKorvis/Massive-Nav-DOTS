@@ -1,0 +1,155 @@
+using PFStar;
+using Unity.Burst;
+using Unity.Entities;
+using Unity.Mathematics;
+using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
+using Unity.Rendering;
+using Unity.Transforms;
+
+namespace OptRenderer
+{
+    [UpdateInGroup(typeof(PresentationSystemGroup))]
+    [BurstCompile]
+    public partial struct DensityCullingSystem : ISystem
+    {
+        private EntityQuery _agentsQuery;
+
+        [BurstCompile]
+        public void OnCreate(ref SystemState state)
+        {
+            state.RequireForUpdate<CullingSettings>();
+            state.RequireForUpdate<GridTag>();
+            state.RequireForUpdate<GridBlobReference>();
+            state.RequireForUpdate<GridSettings>();
+
+            _agentsQuery = state.GetEntityQuery(ComponentType.ReadOnly<DensityCullingTag>());
+        }
+
+        public void OnUpdate(ref SystemState state)
+        {
+            var camera = UnityEngine.Camera.main;
+            if (camera == null) return;
+
+            // if (!SystemAPI.TryGetSingleton<CullingSettings>(out var cullingSettings)) return;
+
+            if (!SystemAPI.TryGetSingletonEntity<CullingSettings>(out var settingsEntity)) return;
+            var cullingSettings = state.EntityManager.GetComponentData<CullingSettings>(settingsEntity);
+
+            if (!cullingSettings.EnableCulling)
+            {
+                state.Dependency = new ResetVisibilityJob().ScheduleParallel(state.Dependency);
+                return;
+            }
+
+            int totalAntsCount = _agentsQuery.CalculateEntityCount();
+
+            if (totalAntsCount == 0) return;
+
+            var gridSettings = SystemAPI.GetSingleton<GridSettings>();
+            int gridSize = gridSettings.Dimensions.x * gridSettings.Dimensions.y;
+
+            var gridCount = new NativeArray<int>(gridSize, Allocator.TempJob);
+
+            var countJob = new CountAntsJob
+            {
+                GridSettings = gridSettings,
+                GridCount = gridCount
+            }.ScheduleParallel(state.Dependency);
+
+            var agentSpareCullingJob = new CombinedCullingJob
+            {
+                CameraPos = camera.transform.position,
+                GridSettings = gridSettings,
+                GridCount = gridCount,
+                TotalAntsCount = totalAntsCount,
+                GlobalThreshold = cullingSettings.GlobalThreshold,
+                MaxAntsPerCell = cullingSettings.MaxAntsPerCell,
+                SafeDistanceSq = cullingSettings.SafeDistance * cullingSettings.SafeDistance
+            }.ScheduleParallel(countJob);
+
+            state.Dependency = agentSpareCullingJob;
+
+            gridCount.Dispose(state.Dependency);
+        }
+
+        [BurstCompile]
+        [WithAll(typeof(DensityCullingTag))]
+        public unsafe partial struct CountAntsJob : IJobEntity
+        {
+            public GridSettings GridSettings;
+
+            [NativeDisableParallelForRestriction] public NativeArray<int> GridCount;
+
+            void Execute(in LocalTransform transform)
+            {
+                int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin);
+
+                if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x &&
+                    coord.y >= 0 && coord.y < GridSettings.Dimensions.y)
+                {
+                    int index = GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x);
+
+                    System.Threading.Interlocked.Increment(ref ((int*)GridCount.GetUnsafePtr())[index]);
+                }
+            }
+        }
+
+        [BurstCompile]
+        [WithAll(typeof(DensityCullingTag))]
+        [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
+        // [WithPresent(typeof(MaterialMeshInfo))]
+        public partial struct ResetVisibilityJob : IJobEntity
+        {
+            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled)
+            {
+                mmiEnabled.ValueRW = true;
+            }
+        }
+
+        [BurstCompile]
+        [WithAll(typeof(DensityCullingTag))]
+        [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
+        public partial struct CombinedCullingJob : IJobEntity
+        {
+            public float3 CameraPos;
+            public GridSettings GridSettings;
+            [ReadOnly] public NativeArray<int> GridCount;
+            public int TotalAntsCount;
+            public int GlobalThreshold;
+            public int MaxAntsPerCell;
+            public float SafeDistanceSq;
+
+
+            private void Execute(Entity entity, EnabledRefRW<MaterialMeshInfo> mmiEnabled, in LocalTransform transform)
+            {
+                float distSq = math.distancesq(transform.Position, CameraPos);
+    
+                if (distSq < SafeDistanceSq)
+                {
+                    mmiEnabled.ValueRW = true;
+                    return;
+                }
+
+                if (TotalAntsCount < GlobalThreshold)
+                {
+                    mmiEnabled.ValueRW = true;
+                    return;
+                }
+
+                int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin);
+                int density = 0;
+                if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x && coord.y >= 0 && coord.y < GridSettings.Dimensions.y)
+                {
+                    density = GridCount[GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x)];
+                }
+                
+                float survivalChance = math.saturate((float)MaxAntsPerCell / math.max(density, 1));
+    
+                float entityHash = (float)((entity.Index * 0.61803398875f) % 1.0);
+    
+                mmiEnabled.ValueRW = entityHash <= survivalChance;
+            }
+        }
+    }
+}

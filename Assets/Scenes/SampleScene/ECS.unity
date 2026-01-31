@@ -348,7 +348,7 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 94553c48510d4df988be73031f4e4365, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Gameplay.EnemySpawnerAuthoring
-  enemyPrefab: {fileID: 7586707044876549774, guid: b42a79cbb51884e8fa5522d9690fb815, type: 3}
+  enemyPrefab: {fileID: 6976562289580889069, guid: 06672a50b93d943e7a18b21818d60022, type: 3}
   count: 50000
   spawnRadius: 15
 --- !u!4 &617737242
@@ -895,6 +895,54 @@ MeshFilter:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 1060872378}
   m_Mesh: {fileID: 10202, guid: 0000000000000000e000000000000000, type: 0}
+--- !u!1 &1269986146
+GameObject:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  serializedVersion: 6
+  m_Component:
+  - component: {fileID: 1269986148}
+  - component: {fileID: 1269986147}
+  m_Layer: 0
+  m_Name: '[Settings] Density Culling'
+  m_TagString: Untagged
+  m_Icon: {fileID: 0}
+  m_NavMeshLayer: 0
+  m_StaticEditorFlags: 0
+  m_IsActive: 1
+--- !u!114 &1269986147
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1269986146}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6bd2554ba04541f48c244443b6f757c4, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::OptRenderer.CullingSettingsAuthoring
+  globalThreshold: 50000
+  maxAgentsPerCell: 1000
+  safeDistance: 15
+  enableCulling: 1
+--- !u!4 &1269986148
+Transform:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 1269986146}
+  serializedVersion: 2
+  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
+  m_LocalPosition: {x: -18.6, y: -0.182, z: 0.31523}
+  m_LocalScale: {x: 1, y: 1, z: 1}
+  m_ConstrainProportionsScale: 0
+  m_Children: []
+  m_Father: {fileID: 0}
+  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
 --- !u!1 &1283020475
 GameObject:
   m_ObjectHideFlags: 0
@@ -906,7 +954,7 @@ GameObject:
   - component: {fileID: 1283020477}
   - component: {fileID: 1283020476}
   m_Layer: 0
-  m_Name: PF_a_strar_settings
+  m_Name: '[Settings] pathfinding A* settings'
   m_TagString: Untagged
   m_Icon: {fileID: 0}
   m_NavMeshLayer: 0
@@ -924,9 +972,9 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: c8169ba8b5f34a248dfc1f9cf091cd82, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PFStar.PathfindingSettingsAuthoring
-  MaxRequestsPerFrame: 15000
+  MaxRequestsPerFrame: 10000
   MaxPossibleAgents: 1024
-  MaxPerFrame: 1024
+  MaxPerFrame: 512
   IterationLimit: 1000
   GreedyCoef: 1.5
   InnerLoopBatchSize: 64
@@ -1502,6 +1550,7 @@ PrefabInstance:
 SceneRoots:
   m_ObjectHideFlags: 0
   m_Roots:
+  - {fileID: 1269986148}
   - {fileID: 1283020477}
   - {fileID: 617737242}
   - {fileID: 161698464}
