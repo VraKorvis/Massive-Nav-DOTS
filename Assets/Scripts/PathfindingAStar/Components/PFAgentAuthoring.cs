@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using OptRenderer;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -63,7 +64,7 @@ Binary      Decimal   Flags set
         Process,
     }
 
-    public struct PathRequestMetadata : IComponentData
+    public struct PFRequestMetadata : IComponentData
     {
         public double RequestTime;
     }
@@ -79,34 +80,48 @@ Binary      Decimal   Flags set
         public int Compare(SortableRequest x, SortableRequest y) => x.RequestTime.CompareTo(y.RequestTime);
     }
 
-    public class PathAgentStatusAuthoring : MonoBehaviour
+    public struct PFRequestAgent : IComponentData {
+        public Entity Focus;
+        public Entity Owner;
+        public int2 StartCoord;
+        public int2 Destination;
+        public float NextAllowedUpdateTime;
+    }
+
+    public class PFAgentAuthoring : MonoBehaviour
     {
         public AgentStatus status;
-    }
-
-    public class PathAgentStatusBaker : Baker<PathAgentStatusAuthoring>
-    {
-        public override void Bake(PathAgentStatusAuthoring authoring)
+        
+        public class PathAgentStatusBaker : Baker<PFAgentAuthoring>
         {
-            var entity = GetEntity(TransformUsageFlags.Dynamic);
-
-            AddComponent(entity, new PathRequestAgent
+            public override void Bake(PFAgentAuthoring authoring)
             {
-                owner = entity,
-                startCoord = int2.zero,
-                destination = int2.zero
-            });
+                var entity = GetEntity(TransformUsageFlags.Dynamic);
+            
+                AddComponent(entity, new PFRequestAgent
+                {
+                    Owner = entity,
+                    StartCoord = int2.zero,
+                    Destination = int2.zero
+                });
 
-            AddComponent(entity, new PathAgentStatus { Value = authoring.status });
-            AddComponent(entity, new PathRequestMetadata { RequestTime = 0 });
+                AddComponent(entity, new PathAgentStatus { Value = authoring.status });
+                AddComponent(entity, new PFRequestMetadata { RequestTime = 0 });
 
-            AddComponent<PathAgentStatusAddPathRequestTag>(entity);
+                AddComponent<PathAgentStatusAddPathRequestTag>(entity);
 
-            AddComponent(entity, new PFAgentState {
-                Flags = (byte)PFAgentsStatus.Significant 
-            });
+                AddComponent(entity, new PFAgentState {
+                    Flags = (byte)PFAgentsStatus.Significant 
+                });
+            
+                AddComponent(entity, new AgentVisualParams { EffectValue = 1f });
+                AddComponent(entity, new DensityCullingTag());
 
-            AddBuffer<Waypoint>(entity);
+                AddBuffer<Waypoint>(entity);
+            
+            
+            }
         }
     }
+    
 }

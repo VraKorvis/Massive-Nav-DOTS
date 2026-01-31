@@ -68,11 +68,11 @@ namespace PFStar
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
                 RefRO<LocalTransform> transform,
-                RefRW<PathRequestAgent> request,
+                RefRW<PFRequestAgent> request,
                 RefRW<PFAgentState> state)
             {
                 var reqRO = request.ValueRO;
-                Entity myTarget = reqRO.focus;
+                Entity myTarget = reqRO.Focus;
 
                 var flags = state.ValueRO.Flags;
 
@@ -100,7 +100,7 @@ namespace PFStar
                     if (TargetDataLookup.TryGetComponent(myTarget, out targetData))
                     {
                         actualTargetCell = targetData.CurrentCell;
-                        if (IsTargetTooFar(actualTargetCell, reqRO.destination, Threshold)) return;
+                        if (IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
                     }
                 }
                 else
@@ -110,7 +110,7 @@ namespace PFStar
 
                 actualTargetCell = targetData.CurrentCell;
 
-                if (reqRO.destination.Equals(actualTargetCell))
+                if (reqRO.Destination.Equals(actualTargetCell))
                 {
                     flags &= (byte)~PFAgentsStatus.Significant;
                     state.ValueRW.Flags = flags;
@@ -137,11 +137,11 @@ namespace PFStar
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void FillRequest(ref PathRequestAgent req, int2 targetCell, float3 pos, float3 origin,
+            private void FillRequest(ref PFRequestAgent req, int2 targetCell, float3 pos, float3 origin,
                 int entityIndex, float time)
             {
-                req.destination = targetCell;
-                req.startCoord = GridUtils.WorldToCellCoord(pos, origin);
+                req.Destination = targetCell;
+                req.StartCoord = GridUtils.WorldToCellCoord(pos, origin);
 
                 float jitter = (entityIndex % 32) * 0.02f;
                 req.NextAllowedUpdateTime = time + 0.3f + jitter;

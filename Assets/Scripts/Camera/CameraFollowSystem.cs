@@ -24,7 +24,7 @@ namespace Camera
             {
                 if (cameraTag.CameraTransform == null) return;
 
-                Vector3 offset = new Vector3(0, 30, -20);
+                Vector3 offset = new Vector3(0, 60, -40);
                 Vector3 desiredPos = (Vector3)targetPos + offset;
 
                 Transform camTransform = cameraTag.CameraTransform;

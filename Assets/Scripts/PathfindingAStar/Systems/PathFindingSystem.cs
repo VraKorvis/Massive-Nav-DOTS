@@ -25,19 +25,19 @@ namespace PFStar
         
         private int _currentBufferSize;
 
-        private ComponentLookup<PathRequestAgent> _pathRequestLookup;
+        private ComponentLookup<PFRequestAgent> _pathRequestLookup;
         private BufferLookup<Waypoint> _waypointLookup;
         private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
+            state.RequireForUpdate<EndSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
 
             _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAllRW<PathRequestAgent>()
-                .WithAllRW<PathRequestMetadata>()
+                .WithAllRW<PFRequestAgent>()
+                .WithAllRW<PFRequestMetadata>()
                 .WithAll<PFAgentState>()
                 .Build(ref state);
 
@@ -61,7 +61,7 @@ namespace PFStar
             };
             _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
 
-            _pathRequestLookup = state.GetComponentLookup<PathRequestAgent>(true);
+            _pathRequestLookup = state.GetComponentLookup<PFRequestAgent>(true);
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
         }
 
@@ -111,14 +111,14 @@ namespace PFStar
 
             int agentsToProcess = math.min(sortableList.Length, pfSettings.MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
-            var pathArray = new NativeArray<PathRequestAgent>(agentsToProcess, Allocator.TempJob);
+            var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
 
             for (int i = 0; i < agentsToProcess; i++)
             {
                 processingEntities[i] = sortableList[i].Entity;
             }
             
-            var ecbSingleton = SystemAPI.GetSingleton<BeginSimulationEntityCommandBufferSystem.Singleton>();
+            var ecbSingleton = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>();
             var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
             var parallelEcb = ecb.AsParallelWriter();
 
@@ -164,7 +164,7 @@ namespace PFStar
         {
             public NativeList<SortableRequest>.ParallelWriter SortableList;
             
-            void Execute(Entity entity, in PathRequestMetadata metadata, in PFAgentState state)
+            void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
             {
                 if ((state.Flags & (byte)PFAgentsStatus.Find) != 0)
                 {
@@ -181,15 +181,15 @@ namespace PFStar
         private struct CollectSortedPathsJob : IJobParallelFor
         {
             [ReadOnly] public NativeArray<Entity> EntitiesToProcess;
-            [ReadOnly] public ComponentLookup<PathRequestAgent> PathRequestLookup;
+            [ReadOnly] public ComponentLookup<PFRequestAgent> PathRequestLookup;
 
-            [WriteOnly] public NativeArray<PathRequestAgent> PathArray;
+            [WriteOnly] public NativeArray<PFRequestAgent> PathArray;
             public EntityCommandBuffer.ParallelWriter ECB;
 
             public void Execute(int index)
             {
                 Entity entity = EntitiesToProcess[index];
-                PathRequestAgent path = PathRequestLookup[entity];
+                PFRequestAgent path = PathRequestLookup[entity];
 
                 PathArray[index] = path;
                 var flags = PFAgentsStatus.Process;
@@ -215,9 +215,9 @@ namespace PFStar
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
 
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
-            [ReadOnly] public ComponentLookup<PathRequestAgent> ActualPathLookup;
+            [ReadOnly] public ComponentLookup<PFRequestAgent> ActualPathLookup;
 
-            [ReadOnly] public NativeArray<PathRequestAgent> PathList;
+            [ReadOnly] public NativeArray<PFRequestAgent> PathList;
 
             [NativeDisableParallelForRestriction] public NativeArray<int> SearchVersions;
             [NativeDisableParallelForRestriction] public NativeArray<float> CostSoFar;
@@ -242,14 +242,14 @@ namespace PFStar
                 // UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
                 openSetSlice.Clear();
 
-                if (request.owner == Entity.Null) return;
+                if (request.Owner == Entity.Null) return;
 
-                if (ActualPathLookup.HasComponent(request.owner))
+                if (ActualPathLookup.HasComponent(request.Owner))
                 {
-                    request.destination = ActualPathLookup[request.owner].destination;
+                    request.Destination = ActualPathLookup[request.Owner].Destination;
                 }
 
-                var waypoints = WaypointsLookup[request.owner];
+                var waypoints = WaypointsLookup[request.Owner];
                 waypoints.Clear();
 
                 int uniqueSearchID = math.max(1, (CurrentFrame * 100000) + index);
@@ -261,8 +261,8 @@ namespace PFStar
                     GridBlob = GridBlob,
                     Waypoints = waypoints,
                     DimX = DimX, DimY = DimY,
-                    StartPos = request.startCoord,
-                    Destination = request.destination,
+                    StartPos = request.StartCoord,
+                    Destination = request.Destination,
                     CostSoFar = costSoFarSlice,
                     CameFrom = cameFromSlice,
                     OpenSet = openSetSlice,
@@ -279,7 +279,7 @@ namespace PFStar
                 {
                     // ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
 
-                    ECB.SetComponent(index, request.owner, new PFAgentState
+                    ECB.SetComponent(index, request.Owner, new PFAgentState
                     {
                         Flags = (byte)PFAgentsStatus.None
                     });
