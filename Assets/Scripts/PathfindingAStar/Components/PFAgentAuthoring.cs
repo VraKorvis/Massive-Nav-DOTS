@@ -17,7 +17,7 @@ namespace PFStar
     {
         public AgentStatus Value;
     }
-    
+
 /*
 Binary      Decimal   Flags set
 0000 0000   0         not used
@@ -41,17 +41,17 @@ Binary      Decimal   Flags set
     [Flags]
     public enum PFAgentsStatus : byte
     {
-        None        = 1 << 0,  // 0000 0001
-        Significant = 1 << 1,  // 0000 0010
-        Find        = 1 << 2,  // 0000 0100
-        Process     = 1 << 3,  // 0000 1000
+        None = 1 << 0, // 0000 0001
+        Significant = 1 << 1, // 0000 0010
+        Find = 1 << 2, // 0000 0100
+        Process = 1 << 3, // 0000 1000
     }
-    
+
     public struct PFAgentState : IComponentData
     {
         public byte Flags;
     }
-    
+
 
     public struct PathAgentStatusAddPathRequestTag : IComponentData, IEnableableComponent
     {
@@ -77,10 +77,15 @@ Binary      Decimal   Flags set
 
     public struct RequestComparer : IComparer<SortableRequest>
     {
-        public int Compare(SortableRequest x, SortableRequest y) => x.RequestTime.CompareTo(y.RequestTime);
+        public int Compare(SortableRequest x, SortableRequest y)
+        {
+            if (x.RequestTime < y.RequestTime) return -1;
+            return x.RequestTime > y.RequestTime ? 1 : 0;
+        }
     }
 
-    public struct PFRequestAgent : IComponentData {
+    public struct PFRequestAgent : IComponentData
+    {
         public Entity Focus;
         public Entity Owner;
         public int2 StartCoord;
@@ -91,13 +96,13 @@ Binary      Decimal   Flags set
     public class PFAgentAuthoring : MonoBehaviour
     {
         public AgentStatus status;
-        
+
         public class PathAgentStatusBaker : Baker<PFAgentAuthoring>
         {
             public override void Bake(PFAgentAuthoring authoring)
             {
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
-            
+
                 AddComponent(entity, new PFRequestAgent
                 {
                     Owner = entity,
@@ -110,19 +115,17 @@ Binary      Decimal   Flags set
 
                 AddComponent<PathAgentStatusAddPathRequestTag>(entity);
 
-                AddComponent(entity, new PFAgentState {
-                    Flags = (byte)PFAgentsStatus.Significant 
+                AddComponent(entity, new PFAgentState
+                {
+                    Flags = (byte)PFAgentsStatus.Significant
                 });
-            
+
                 AddComponent(entity, new AgentVisualParams { EffectValue = 1f });
                 AddComponent(entity, new DensityCullingData());
                 AddComponent(entity, new VisibilityProperty());
 
                 AddBuffer<Waypoint>(entity);
-            
-            
             }
         }
     }
-    
 }

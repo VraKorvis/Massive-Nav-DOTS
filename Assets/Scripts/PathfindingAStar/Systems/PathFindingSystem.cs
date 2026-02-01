@@ -6,6 +6,8 @@ using Unity.Jobs;
 using Unity.Mathematics;
 using UnityEngine;
 
+[assembly: RegisterGenericJobType(typeof(SortJob<PFStar.SortableRequest, PFStar.RequestComparer>))]
+
 namespace PFStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -25,6 +27,11 @@ namespace PFStar
         private const int NeighborCount = 8;
 
         private int _currentBufferSize;
+
+        private ComponentLookup<PFRequestAgent> _pathRequestLookup;
+        private ComponentLookup<PFAgentState> _agentStateLookup;
+        private BufferLookup<Waypoint> _waypointLookup;
+        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -56,6 +63,11 @@ namespace PFStar
                 [6] = new int2(1, -1),
                 [7] = new int2(-1, -1)
             };
+
+            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
+            _pathRequestLookup = state.GetComponentLookup<PFRequestAgent>(true);
+            _waypointLookup = state.GetBufferLookup<Waypoint>(false);
+            _agentStateLookup = state.GetComponentLookup<PFAgentState>(false);
         }
 
         [BurstCompile]
@@ -63,15 +75,15 @@ namespace PFStar
         {
             if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
 
-            var gridBlobLookup = SystemAPI.GetComponentLookup<GridBlobReference>(true);
-            var pathRequestLookup = SystemAPI.GetComponentLookup<PFRequestAgent>(true);
-            var waypointLookup = SystemAPI.GetBufferLookup<Waypoint>(false);
-            var agentStateLookup = SystemAPI.GetComponentLookup<PFAgentState>(false);
+            _waypointLookup.Update(ref state);
+            _gridBlobLookup.Update(ref state);
+            _pathRequestLookup.Update(ref state);
+            _agentStateLookup.Update(ref state);
 
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var gridSettings = SystemAPI.GetComponent<GridSettings>(gridEntity);
 
-            var gridBlobRef = gridBlobLookup[gridEntity].Value;
+            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
             int dimX = gridSettings.Dimensions.x;
             int dimY = gridSettings.Dimensions.y;
 
@@ -97,7 +109,7 @@ namespace PFStar
             {
                 SortableList = sortableList.AsParallelWriter()
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
-            
+
             int agentsToProcess = math.min(totalWaiting, pfSettings.MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
@@ -110,10 +122,10 @@ namespace PFStar
                 MaxToProcess = pfSettings.MaxPerFrame,
                 ProcessingEntities = processingEntities,
                 PathArray = pathArray,
-                PathRequestLookup = pathRequestLookup,
-                AgentStateLookup = agentStateLookup,
+                PathRequestLookup = _pathRequestLookup,
+                AgentStateLookup = _agentStateLookup,
             }.Schedule(sortHandle);
-            
+
             var findHandle = new FindPathAStarJob
             {
                 GreedyCoef = pfSettings.GreedyCoef,
@@ -123,8 +135,8 @@ namespace PFStar
                 DimY = dimY,
                 ProcessingEntities = processingEntities,
                 GridStride = _currentBufferSize,
-                WaypointsLookup = waypointLookup,
-                ActualPathLookup = pathRequestLookup,
+                WaypointsLookup = _waypointLookup,
+                ActualPathLookup = _pathRequestLookup,
                 PathList = pathArray,
                 SearchVersions = _searchVersions,
                 CurrentFrame = Time.frameCount,
@@ -132,7 +144,7 @@ namespace PFStar
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
-                AgentStateLookup = agentStateLookup,
+                AgentStateLookup = _agentStateLookup,
             }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, prepareHandle);
 
             state.Dependency = findHandle;
@@ -145,6 +157,7 @@ namespace PFStar
         [BurstCompile]
         public partial struct CollectRequestsJob : IJobEntity
         {
+            [WriteOnly] [NativeDisableContainerSafetyRestriction]
             public NativeList<SortableRequest>.ParallelWriter SortableList;
 
             void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
@@ -161,13 +174,15 @@ namespace PFStar
         }
 
         [BurstCompile]
-        public struct PrepareAndMarkJob : IJob
+        private struct PrepareAndMarkJob : IJob
         {
-            [ReadOnly] public NativeList<SortableRequest> SortedList;
             public int MaxToProcess;
 
-            public NativeArray<Entity> ProcessingEntities;
-            public NativeArray<PFRequestAgent> PathArray;
+            [ReadOnly] [NativeDisableContainerSafetyRestriction]
+            public NativeList<SortableRequest> SortedList;
+
+            [WriteOnly] public NativeArray<Entity> ProcessingEntities;
+            [WriteOnly] public NativeArray<PFRequestAgent> PathArray;
 
             [ReadOnly] public ComponentLookup<PFRequestAgent> PathRequestLookup;
             public ComponentLookup<PFAgentState> AgentStateLookup;
@@ -207,21 +222,18 @@ namespace PFStar
             public int IterationLimit;
 
             public int CurrentFrame;
-            
-            [ReadOnly] public NativeArray<Entity> ProcessingEntities;
-            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
+
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
-
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
-            [ReadOnly] public ComponentLookup<PFRequestAgent> ActualPathLookup;
 
+            [ReadOnly] public NativeArray<Entity> ProcessingEntities;
             [ReadOnly] public NativeArray<PFRequestAgent> PathList;
+            [ReadOnly] public ComponentLookup<PFRequestAgent> ActualPathLookup;
+            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
 
             [NativeDisableParallelForRestriction] public NativeArray<int> SearchVersions;
             [NativeDisableParallelForRestriction] public NativeArray<float> CostSoFar;
-
             [NativeDisableParallelForRestriction] public NativeArray<int2> CameFrom;
-
             [NativeDisableParallelForRestriction] public NativeMinHeap OpenSet;
 
             [ReadOnly] public NativeArray<int2> Neighbours;
@@ -229,7 +241,7 @@ namespace PFStar
             public void Execute(int index)
             {
                 if (ProcessingEntities[index] == Entity.Null) return;
-                
+
                 var searchVersionsSlice = SearchVersions.Slice(index * GridStride, GridStride);
                 var costSoFarSlice = CostSoFar.Slice(index * GridStride, GridStride);
                 var cameFromSlice = CameFrom.Slice(index * GridStride, GridStride);
