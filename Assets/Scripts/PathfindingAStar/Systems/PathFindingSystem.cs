@@ -1,5 +1,6 @@
 using Unity.Burst;
 using Unity.Collections;
+using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
@@ -22,12 +23,8 @@ namespace PFStar
         private NativeMinHeap _openSet;
 
         private const int NeighborCount = 8;
-        
-        private int _currentBufferSize;
 
-        private ComponentLookup<PFRequestAgent> _pathRequestLookup;
-        private BufferLookup<Waypoint> _waypointLookup;
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
+        private int _currentBufferSize;
 
         [BurstCompile]
         public void OnCreate(ref SystemState state)
@@ -59,24 +56,22 @@ namespace PFStar
                 [6] = new int2(1, -1),
                 [7] = new int2(-1, -1)
             };
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
-
-            _pathRequestLookup = state.GetComponentLookup<PFRequestAgent>(true);
-            _waypointLookup = state.GetBufferLookup<Waypoint>(false);
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
-            
-            _waypointLookup.Update(ref state);
-            _gridBlobLookup.Update(ref state);
+
+            var gridBlobLookup = SystemAPI.GetComponentLookup<GridBlobReference>(true);
+            var pathRequestLookup = SystemAPI.GetComponentLookup<PFRequestAgent>(true);
+            var waypointLookup = SystemAPI.GetBufferLookup<Waypoint>(false);
+            var agentStateLookup = SystemAPI.GetComponentLookup<PFAgentState>(false);
 
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var gridSettings = SystemAPI.GetComponent<GridSettings>(gridEntity);
 
-            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
+            var gridBlobRef = gridBlobLookup[gridEntity].Value;
             int dimX = gridSettings.Dimensions.x;
             int dimY = gridSettings.Dimensions.y;
 
@@ -95,43 +90,30 @@ namespace PFStar
 
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
-            
+
             var sortableList = new NativeList<SortableRequest>(totalWaiting, Allocator.TempJob);
 
-            var collectJob = new CollectRequestsJob 
-            { 
-                SortableList = sortableList.AsParallelWriter() 
+            var collectJob = new CollectRequestsJob
+            {
+                SortableList = sortableList.AsParallelWriter()
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
-    
-            state.Dependency = collectJob;
-
-            state.Dependency.Complete();
             
-            sortableList.Sort(new RequestComparer());
-
-            int agentsToProcess = math.min(sortableList.Length, pfSettings.MaxPerFrame);
+            int agentsToProcess = math.min(totalWaiting, pfSettings.MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
 
-            for (int i = 0; i < agentsToProcess; i++)
-            {
-                processingEntities[i] = sortableList[i].Entity;
-            }
-            
-            var ecbSingleton = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>();
-            var ecb = ecbSingleton.CreateCommandBuffer(state.WorldUnmanaged);
-            var parallelEcb = ecb.AsParallelWriter();
+            var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJob);
 
-            _pathRequestLookup.Update(ref state);
-
-            var collectHandle = new CollectSortedPathsJob
+            var prepareHandle = new PrepareAndMarkJob
             {
-                EntitiesToProcess = processingEntities,
-                PathRequestLookup = _pathRequestLookup,
+                SortedList = sortableList,
+                MaxToProcess = pfSettings.MaxPerFrame,
+                ProcessingEntities = processingEntities,
                 PathArray = pathArray,
-                ECB = parallelEcb
-            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, state.Dependency);
-
+                PathRequestLookup = pathRequestLookup,
+                AgentStateLookup = agentStateLookup,
+            }.Schedule(sortHandle);
+            
             var findHandle = new FindPathAStarJob
             {
                 GreedyCoef = pfSettings.GreedyCoef,
@@ -139,9 +121,10 @@ namespace PFStar
                 GridBlob = gridBlobRef,
                 DimX = dimX,
                 DimY = dimY,
+                ProcessingEntities = processingEntities,
                 GridStride = _currentBufferSize,
-                WaypointsLookup = _waypointLookup,
-                ActualPathLookup = _pathRequestLookup,
+                WaypointsLookup = waypointLookup,
+                ActualPathLookup = pathRequestLookup,
                 PathList = pathArray,
                 SearchVersions = _searchVersions,
                 CurrentFrame = Time.frameCount,
@@ -149,69 +132,84 @@ namespace PFStar
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
-                ECB = parallelEcb
-            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, collectHandle);
+                AgentStateLookup = agentStateLookup,
+            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, prepareHandle);
 
             state.Dependency = findHandle;
 
             processingEntities.Dispose(state.Dependency);
             pathArray.Dispose(state.Dependency);
-            sortableList.Dispose();
+            sortableList.Dispose(state.Dependency);
         }
-        
+
         [BurstCompile]
         public partial struct CollectRequestsJob : IJobEntity
         {
             public NativeList<SortableRequest>.ParallelWriter SortableList;
-            
+
             void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
             {
                 if ((state.Flags & (byte)PFAgentsStatus.Find) != 0)
                 {
-                    SortableList.AddNoResize(new SortableRequest 
-                    { 
-                        Entity = entity, 
-                        RequestTime = metadata.RequestTime 
+                    SortableList.AddNoResize(new SortableRequest
+                    {
+                        Entity = entity,
+                        RequestTime = metadata.RequestTime
                     });
                 }
             }
         }
 
         [BurstCompile]
-        private struct CollectSortedPathsJob : IJobParallelFor
+        public struct PrepareAndMarkJob : IJob
         {
-            [ReadOnly] public NativeArray<Entity> EntitiesToProcess;
+            [ReadOnly] public NativeList<SortableRequest> SortedList;
+            public int MaxToProcess;
+
+            public NativeArray<Entity> ProcessingEntities;
+            public NativeArray<PFRequestAgent> PathArray;
+
             [ReadOnly] public ComponentLookup<PFRequestAgent> PathRequestLookup;
+            public ComponentLookup<PFAgentState> AgentStateLookup;
 
-            [WriteOnly] public NativeArray<PFRequestAgent> PathArray;
-            public EntityCommandBuffer.ParallelWriter ECB;
-
-            public void Execute(int index)
+            public void Execute()
             {
-                Entity entity = EntitiesToProcess[index];
-                PFRequestAgent path = PathRequestLookup[entity];
+                int count = math.min(SortedList.Length, MaxToProcess);
 
-                PathArray[index] = path;
-                var flags = PFAgentsStatus.Process;
+                for (int i = 0; i < MaxToProcess; i++)
+                {
+                    if (i < count)
+                    {
+                        Entity entity = SortedList[i].Entity;
+                        ProcessingEntities[i] = entity;
+                        PathArray[i] = PathRequestLookup[entity];
 
-                ECB.SetComponent(index, entity, new PFAgentState { Flags = (byte)flags });
+                        var state = AgentStateLookup[entity];
+                        state.Flags = (byte)PFAgentsStatus.Process;
+                        AgentStateLookup[entity] = state;
+                    }
+                    else
+                    {
+                        ProcessingEntities[i] = Entity.Null;
+                    }
+                }
             }
         }
 
         [BurstCompile]
-        private struct FindPathAStarJob : IJobParallelFor
+        private unsafe struct FindPathAStarJob : IJobParallelFor
         {
             public int DimX;
             public int DimY;
             public int GridStride;
-            
+
             public float GreedyCoef;
             public int IterationLimit;
-            
+
             public int CurrentFrame;
-
-            public EntityCommandBuffer.ParallelWriter ECB;
-
+            
+            [ReadOnly] public NativeArray<Entity> ProcessingEntities;
+            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
 
             [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
@@ -230,6 +228,8 @@ namespace PFStar
 
             public void Execute(int index)
             {
+                if (ProcessingEntities[index] == Entity.Null) return;
+                
                 var searchVersionsSlice = SearchVersions.Slice(index * GridStride, GridStride);
                 var costSoFarSlice = CostSoFar.Slice(index * GridStride, GridStride);
                 var cameFromSlice = CameFrom.Slice(index * GridStride, GridStride);
@@ -238,8 +238,8 @@ namespace PFStar
 
                 var request = PathList[index];
 
-                // UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
-                // UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
+                UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
+                UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
                 openSetSlice.Clear();
 
                 if (request.Owner == Entity.Null) return;
@@ -270,19 +270,18 @@ namespace PFStar
                     SearchID = uniqueSearchID,
                 };
 
-
                 if (FindPath(ref box))
                 {
                     BuildPath(ref GridBlob.Value, ref box);
+                    var state = AgentStateLookup[request.Owner];
+                    state.Flags = (byte)PFAgentsStatus.Process;
+                    AgentStateLookup[request.Owner] = state;
                 }
                 else
                 {
-                    // ECB.SetComponent(index, request.owner, new PathAgentStatus { Value = AgentStatus.None });
-
-                    ECB.SetComponent(index, request.Owner, new PFAgentState
-                    {
-                        Flags = (byte)PFAgentsStatus.None
-                    });
+                    var state = AgentStateLookup[request.Owner];
+                    state.Flags = (byte)PFAgentsStatus.None;
+                    AgentStateLookup[request.Owner] = state;
                 }
             }
 
@@ -303,7 +302,6 @@ namespace PFStar
 
                 public float GreedyCoef;
                 public int IterationLimit;
-
             }
 
             private bool FindPath(ref BoxData box)
