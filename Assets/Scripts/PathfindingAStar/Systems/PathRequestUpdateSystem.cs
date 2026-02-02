@@ -101,30 +101,35 @@ namespace PFStar
                 bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
                 bool cooldownOver = CurrentTime >= reqRO.NextAllowedUpdateTime;
 
-                bool needsUpdate = targetMoved || isUrgent || (isIdle && cooldownOver);
+                bool needsUpdate = targetMoved || isUrgent || cooldownOver;
+                
+                if (!needsUpdate) return;
+                
+                if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData)) return;
 
-                NavigationTargetGridData targetData;
-                int2 actualTargetCell;
-                if (!needsUpdate)
+                var actualTargetCell = targetData.CurrentCell;                
+                if (!targetMoved && !isUrgent)
                 {
-                    if (TargetDataLookup.TryGetComponent(myTarget, out targetData))
-                    {
-                        actualTargetCell = targetData.CurrentCell;
-                        if (IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
-                    }
+                    if (!IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
+                }
+                
+                if (!reqRO.Destination.Equals(actualTargetCell))
+                {
+                    request.ValueRW.Destination = actualTargetCell;
                 }
                 else
                 {
-                    if (!TargetDataLookup.TryGetComponent(myTarget, out targetData)) return;
+                    if (!isUrgent)
+                    {
+                        flags &= (byte)~PFAgentsStatus.Significant;
+                        state.ValueRW.Flags = flags;
+                        return;
+                    }
                 }
-
-                actualTargetCell = targetData.CurrentCell;
-
-                if (reqRO.Destination.Equals(actualTargetCell))
+                
+                if (!targetMoved && !isUrgent)
                 {
-                    flags &= (byte)~PFAgentsStatus.Significant;
-                    state.ValueRW.Flags = flags;
-                    return;
+                    if (!IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
                 }
 
                 int* ptr = (int*)Counter.GetUnsafePtr();
