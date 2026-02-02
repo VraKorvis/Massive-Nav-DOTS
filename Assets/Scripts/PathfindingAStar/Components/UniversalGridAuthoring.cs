@@ -64,9 +64,12 @@ namespace PFStar
                     float3 wallScale = wall.transform.localScale;
 
                     float4x4 worldToWallLocal = math.inverse(wall.transform.localToWorldMatrix);
-
-                    float3 minP = wallPos - (wallScale * 0.5f);
-                    float3 maxP = wallPos + (wallScale * 0.5f);
+                    
+                    var renderer = wall.GetComponent<Renderer>();
+                    Bounds b = renderer != null ? renderer.bounds : new Bounds(wallPos, wallScale); 
+    
+                    float3 minP = b.min;
+                    float3 maxP = b.max;
 
                     int2 minCoord = GridUtils.WorldToCellCoord(minP - new float3(authoring.cellSize), cornerOrigin);
                     int2 maxCoord = GridUtils.WorldToCellCoord(maxP + new float3(authoring.cellSize), cornerOrigin);
@@ -79,8 +82,8 @@ namespace PFStar
 
                             float3 localPos = math.transform(worldToWallLocal, cellWorldPos);
                             
-                            float margin = 0.5f + (authoring.cellSize * 0.5f / wallScale.x); 
-                            float marginZ = 0.5f + (authoring.cellSize * 0.5f / wallScale.z);            
+                            float margin = 0.7f + (authoring.cellSize * 0.5f / wallScale.x); 
+                            float marginZ = 0.7f + (authoring.cellSize * 0.5f / wallScale.z);           
 
                             if (math.abs(localPos.x) <= margin && math.abs(localPos.z) <= marginZ) 
                             {
@@ -127,59 +130,49 @@ namespace PFStar
                 AddComponent(entity, new GridBlobReference { Value = blobRef });
             }
         }
-
+        
         private void OnDrawGizmos()
         {
-            if (dimensions.x <= 0 || dimensions.y <= 0) return;
-
-            Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.2f); 
-            Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.1f); 
-            
-            Vector3 offset = new Vector3(
-                (dimensions.x - 1) * cellSize * 0.5f,
-                0,
-                (dimensions.y - 1) * cellSize * 0.5f
-            );
-            Vector3 cornerOrigin = transform.position - offset + new Vector3(0, 0.3f, 0);
-
-            var walls = FindObjectsByType<WallAuthoring>(FindObjectsSortMode.None);
-
-            for (int y = 0; y < dimensions.y; y++)
+            var world = World.DefaultGameObjectInjectionWorld;
+            if (world == null) return;
+    
+            var entityManager = world.EntityManager;
+            var query = entityManager.CreateEntityQuery(typeof(GridBlobReference));
+    
+            if (!query.IsEmpty)
             {
-                for (int x = 0; x < dimensions.x; x++)
+                
+                var gridRef = query.GetSingleton<GridBlobReference>();
+                if (!gridRef.Value.IsCreated) return;
+
+                ref var grid = ref gridRef.Value.Value;
+        
+                Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.4f); 
+                Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.1f); 
+
+                for (int i = 0; i < grid.CellsType.Length; i++)
                 {
-                    Vector3 pos = cornerOrigin + new Vector3(x * cellSize, 0, y * cellSize);
-                    bool isWall = false;
-
-                    foreach (var wall in walls)
-                    {
-                        Matrix4x4 worldToWallLocal = wall.transform.worldToLocalMatrix;
-                        Vector3 localPos = worldToWallLocal.MultiplyPoint3x4(pos);
-
-                        Vector3 wallScale = wall.transform.localScale;
-                        
-                        float marginX = 0.5f + (cellSize * 0.5f / wallScale.x);
-                        float marginZ = 0.5f + (cellSize * 0.5f / wallScale.z);
-                        
-                        if (Mathf.Abs(localPos.x) <= marginX && Mathf.Abs(localPos.z) <= marginZ)
-                        {
-                            isWall = true;
-                            break;
-                        }
-                    }
-
-                    Gizmos.color = isWall ? wallColor : groundColor;
+                    bool isWall = grid.CellsType[i] == CellType.Wall;
             
+                    int2 coord = GridUtils.IndexToCoord(i, grid.Dimensions.x);
+                    Vector3 pos = grid.Origin + new float3(coord.x * grid.CellSize, 0, coord.y * grid.CellSize);
+
                     if (isWall)
                     {
-                        Gizmos.DrawCube(pos, new Vector3(cellSize, 0.2f, cellSize));
+                        Gizmos.color = wallColor;
+                        Gizmos.DrawCube(pos, new Vector3(grid.CellSize, 0.2f, grid.CellSize));
+                
+                        Gizmos.color = Color.red;
+                        Gizmos.DrawWireCube(pos, new Vector3(grid.CellSize, 0.2f, grid.CellSize));
                     }
                     else
                     {
-                        Gizmos.DrawWireCube(pos, new Vector3(cellSize * 0.9f, 0.1f, cellSize * 0.9f));
+                        Gizmos.color = groundColor;
+                        Gizmos.DrawWireCube(pos, new Vector3(grid.CellSize * 0.9f, 0.1f, grid.CellSize * 0.9f));
                     }
                 }
             }
         }
+        
     }
 }
