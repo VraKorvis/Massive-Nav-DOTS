@@ -79,6 +79,9 @@ Binary      Decimal   Flags set
     {
         public int Compare(SortableRequest x, SortableRequest y)
         {
+            if (x.Entity == Entity.Null) return y.Entity == Entity.Null ? 0 : 1;
+            if (y.Entity == Entity.Null) return -1;
+            
             if (x.RequestTime < y.RequestTime) return -1;
             return x.RequestTime > y.RequestTime ? 1 : 0;
         }

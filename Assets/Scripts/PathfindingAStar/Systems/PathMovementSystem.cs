@@ -18,6 +18,7 @@ namespace PFStar
         {
             var moveJob = new PathMoveJob { DeltaTime = SystemAPI.Time.DeltaTime };
             state.Dependency = moveJob.ScheduleParallel(state.Dependency);
+            state.Enabled = false;
         }
 
         [BurstCompile]

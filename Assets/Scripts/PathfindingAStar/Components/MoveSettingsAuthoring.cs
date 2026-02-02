@@ -12,6 +12,7 @@ namespace PFStar
         public bool isMoving;
         public bool targetCellBlocked;
         public float3 targetCellPos;
+        public float3 velocity;
     }
     
     public class MoveSettingsAuthoring : MonoBehaviour 

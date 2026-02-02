@@ -3,7 +3,7 @@ using Unity.Entities;
 
 namespace PFStar
 {
-    public struct PathfindingSettings : IComponentData
+    public struct NavigationSettings : IComponentData
     {
         public int MaxRequestsPerFrame;
         public int MaxPossibleAgents;
@@ -11,9 +11,14 @@ namespace PFStar
         public int IterationLimit;
         public float GreedyCoef;
         public int InnerLoopBatchSize;
+        
+        public float SeparationRadius;
+        public float SeparationWeight;
+        public float SpatialCellSize;
+        
     }
     
-    public class PathfindingSettingsAuthoring : MonoBehaviour
+    public class NavigationSettingsAuthoring : MonoBehaviour
     {
         [Header("Requests (PathRequestUpdateSystem)")]
         [Tooltip("Hard limit on how many agents can issue a pathfinding request in a single frame. Prevents buffer overflow. Recommended: 1000-5000.")]
@@ -40,20 +45,36 @@ namespace PFStar
         [Tooltip("Entities per worker thread. Recommended: 32, 64, or 128.")]
         [Range(1, 512)]
         public int innerLoopBatchSize = 64;
+        
+        [Header("Crowd Steering")]
+        [Tooltip("The radius of the agent's personal zone. If another agent enters this radius, the ant will start to steer away.")]
+        [Range(0.1f, 2.0f)]
+        public float separationRadius = 1.5f;
 
-        public class Baker : Baker<PathfindingSettingsAuthoring>
+        [Tooltip("The strength of the crowd's influence on the course. 0.0 - ignore everyone, 1.0 - very strong repulsion.")]
+        [Range(0.0f, 1.0f)]
+        public float separationWeight = 0.2f;
+
+        [Tooltip("Spatial Hash cell size. Recommended: separationRadius * 2.0 for optimal performance.")]
+        [Range(0.2f, 4.0f)]
+        public float spatialCellSize = 3f;
+
+        public class Baker : Baker<NavigationSettingsAuthoring>
         {
-            public override void Bake(PathfindingSettingsAuthoring authoring)
+            public override void Bake(NavigationSettingsAuthoring authoring)
             {
                 var entity = GetEntity(TransformUsageFlags.None);
-                AddComponent(entity, new PathfindingSettings
+                AddComponent(entity, new NavigationSettings
                 {
                     MaxRequestsPerFrame = authoring.maxRequestsPerFrame,
                     MaxPossibleAgents = authoring.maxPossibleAgents,
                     MaxPerFrame = authoring.maxPerFrame,
                     IterationLimit = authoring.iterationLimit,
                     GreedyCoef = authoring.greedyCoef,
-                    InnerLoopBatchSize = authoring.innerLoopBatchSize
+                    InnerLoopBatchSize = authoring.innerLoopBatchSize,
+                    SeparationRadius = authoring.separationRadius,
+                    SeparationWeight = authoring.separationWeight,
+                    SpatialCellSize = authoring.spatialCellSize,
                 });
             }
         }

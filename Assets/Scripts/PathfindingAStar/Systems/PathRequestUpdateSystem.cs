@@ -13,6 +13,9 @@ namespace PFStar
     public unsafe partial struct PathRequestUpdateSystem : ISystem
     {
         private NativeArray<int> _requestsCounter;
+        
+        private ComponentLookup<NavigationTargetGridData> _targetDataLookup;
+        private ComponentLookup<TargetChangedTag> _targetChangedLookup;
 
         public void OnCreate(ref SystemState state)
         {
@@ -22,6 +25,9 @@ namespace PFStar
             state.RequireForUpdate<NavigationTargetGridData>();
 
             _requestsCounter = new NativeArray<int>(1, Allocator.Persistent);
+            
+            _targetDataLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
+            _targetChangedLookup = state.GetComponentLookup<TargetChangedTag>(true);
         }
 
         public void OnDestroy(ref SystemState state)
@@ -32,17 +38,21 @@ namespace PFStar
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
+            
             _requestsCounter[0] = 0;
-            if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
+
+            _targetDataLookup.Update(ref state);
+            _targetChangedLookup.Update(ref state);
 
             var job = new PathRequestStatusJob
             {
-                TargetDataLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
-                TargetChangedLookup = SystemAPI.GetComponentLookup<TargetChangedTag>(true),
+                TargetDataLookup = _targetDataLookup,
+                TargetChangedLookup = _targetChangedLookup,
 
                 GridOrigin = SystemAPI.GetSingleton<GridSettings>().Origin,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
-                MaxRequests = pfSettings.MaxRequestsPerFrame,
+                MaxRequests = navSettings.MaxRequestsPerFrame,
 
                 Counter = _requestsCounter,
             };

@@ -36,6 +36,7 @@ namespace PFStar
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<EndSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
 
@@ -73,7 +74,7 @@ namespace PFStar
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            if (!SystemAPI.TryGetSingleton<PathfindingSettings>(out var pfSettings)) return;
+            if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
 
             _waypointLookup.Update(ref state);
             _gridBlobLookup.Update(ref state);
@@ -92,7 +93,7 @@ namespace PFStar
             if (!_costSoFar.IsCreated && gridSize > 0)
             {
                 _currentBufferSize = gridSize;
-                int totalCapacity = _currentBufferSize * pfSettings.MaxPossibleAgents;
+                int totalCapacity = _currentBufferSize * navSettings.MaxPossibleAgents;
 
                 _searchVersions = new NativeArray<int>(totalCapacity, Allocator.Persistent);
                 _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
@@ -105,21 +106,21 @@ namespace PFStar
 
             var sortableList = new NativeList<SortableRequest>(totalWaiting, Allocator.TempJob);
 
-            var collectJob = new CollectRequestsJob
+            var collectJobHandle = new CollectRequestsJob
             {
                 SortableList = sortableList.AsParallelWriter()
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
 
-            int agentsToProcess = math.min(totalWaiting, pfSettings.MaxPerFrame);
+            int agentsToProcess = math.min(totalWaiting, navSettings.MaxPerFrame);
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
 
-            var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJob);
+            var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJobHandle);
 
             var prepareHandle = new PrepareAndMarkJob
             {
                 SortedList = sortableList,
-                MaxToProcess = pfSettings.MaxPerFrame,
+                MaxToProcess = navSettings.MaxPerFrame,
                 ProcessingEntities = processingEntities,
                 PathArray = pathArray,
                 PathRequestLookup = _pathRequestLookup,
@@ -128,8 +129,8 @@ namespace PFStar
 
             var findHandle = new FindPathAStarJob
             {
-                GreedyCoef = pfSettings.GreedyCoef,
-                IterationLimit = pfSettings.IterationLimit,
+                GreedyCoef = navSettings.GreedyCoef,
+                IterationLimit = navSettings.IterationLimit,
                 GridBlob = gridBlobRef,
                 DimX = dimX,
                 DimY = dimY,
@@ -145,7 +146,7 @@ namespace PFStar
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
                 AgentStateLookup = _agentStateLookup,
-            }.Schedule(agentsToProcess, pfSettings.InnerLoopBatchSize, prepareHandle);
+            }.Schedule(agentsToProcess, navSettings.InnerLoopBatchSize, prepareHandle);
 
             state.Dependency = findHandle;
 
