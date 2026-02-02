@@ -16,6 +16,7 @@ namespace PFStar
         
         private ComponentLookup<NavigationTargetGridData> _targetDataLookup;
         private ComponentLookup<TargetChangedTag> _targetChangedLookup;
+        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         public void OnCreate(ref SystemState state)
         {
@@ -28,6 +29,7 @@ namespace PFStar
             
             _targetDataLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
             _targetChangedLookup = state.GetComponentLookup<TargetChangedTag>(true);
+            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
         }
 
         public void OnDestroy(ref SystemState state)
@@ -44,12 +46,16 @@ namespace PFStar
 
             _targetDataLookup.Update(ref state);
             _targetChangedLookup.Update(ref state);
+            _gridBlobLookup.Update(ref state);
+            
+            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
+            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
 
             var job = new PathRequestStatusJob
             {
+                GridBlob = gridBlobRef,
                 TargetDataLookup = _targetDataLookup,
                 TargetChangedLookup = _targetChangedLookup,
-
                 GridOrigin = SystemAPI.GetSingleton<GridSettings>().Origin,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
                 MaxRequests = navSettings.MaxRequestsPerFrame,
@@ -73,7 +79,8 @@ namespace PFStar
             public int MaxRequests;
 
             [NativeDisableUnsafePtrRestriction] public NativeArray<int> Counter;
-            
+            [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
+
             void Execute(
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
@@ -89,28 +96,38 @@ namespace PFStar
                 if ((flags & (byte)PFAgentsStatus.Find) != 0) return;
 
                 bool isUrgent = (flags & (byte)PFAgentsStatus.Significant) != 0;
+                bool cooldownOver = CurrentTime > reqRO.NextAllowedUpdateTime;
+                bool isIdle = (flags & (byte)PFAgentsStatus.Idle) != 0;
 
-                if (!isUrgent && CurrentTime < reqRO.NextAllowedUpdateTime)
+                if (!cooldownOver)
                     return;
-
-                bool isIdle = (flags & (byte)PFAgentsStatus.None) != 0;
-
+                
                 if (!TargetDataLookup.HasComponent(myTarget))
                     return;
-
-                bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
-                bool cooldownOver = CurrentTime >= reqRO.NextAllowedUpdateTime;
-
-                bool needsUpdate = targetMoved || isUrgent || cooldownOver;
                 
-                if (!needsUpdate) return;
+                var currentPos = transform.ValueRO.Position;
+                
+                float3 destPos = GridUtils.CellToWorldCoord(reqRO.Destination, GridOrigin);
+                float distToDest = math.distance(currentPos, destPos);
+                
+                bool isStuck = !isIdle && distToDest > 0.75f;
+
+                ref var gridBlobValue = ref GridBlob.Value;
+                bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
+                bool isAtDestination = math.all(GridUtils.WorldToCellCoord(currentPos, gridBlobValue.Origin) == reqRO.Destination);
                 
                 if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData)) return;
+                
+                var actualTargetCell = targetData.CurrentCell; 
 
-                var actualTargetCell = targetData.CurrentCell;                
-                if (!targetMoved && !isUrgent)
+                if (!targetMoved && !isUrgent && !isStuck && !(isIdle && (!isAtDestination || !math.all(reqRO.Destination == actualTargetCell)))) 
                 {
-                    if (!IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
+                    if (!isIdle) return;
+                }
+                
+                if (!isUrgent && !targetMoved)
+                {
+                    if (!IsTargetTooFar(actualTargetCell, reqRO.Destination, 0)) return;
                 }
                 
                 if (!reqRO.Destination.Equals(actualTargetCell))
@@ -125,11 +142,6 @@ namespace PFStar
                         state.ValueRW.Flags = flags;
                         return;
                     }
-                }
-                
-                if (!targetMoved && !isUrgent)
-                {
-                    if (!IsTargetTooFar(actualTargetCell, reqRO.Destination, Threshold)) return;
                 }
 
                 int* ptr = (int*)Counter.GetUnsafePtr();
@@ -166,7 +178,7 @@ namespace PFStar
             private void SetFlagsAfterRequest(ref byte flags)
             {
                 flags |= (byte)PFAgentsStatus.Find;
-                flags &= (byte)~PFAgentsStatus.None;
+                flags &= (byte)~PFAgentsStatus.Idle;
                 flags &= (byte)~PFAgentsStatus.Process;
                 flags &= (byte)~PFAgentsStatus.Significant;
             }

@@ -59,6 +59,12 @@ public static class GridUtils
         float2 diff = worldPos.xz - origin.xz;
         return (int2)math.round(diff);
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float3 CellToWorldCoord(int2 cellCoord, float3 origin)
+    {
+        return new float3(cellCoord.x + origin.x, origin.y, cellCoord.y + origin.z);
+    }
 
     /// <summary>
     /// Get world pos of cell

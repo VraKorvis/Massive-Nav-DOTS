@@ -293,7 +293,7 @@ namespace PFStar
                 else
                 {
                     var state = AgentStateLookup[request.Owner];
-                    state.Flags = (byte)PFAgentsStatus.None;
+                    state.Flags = (byte)PFAgentsStatus.Idle;
                     AgentStateLookup[request.Owner] = state;
                 }
             }

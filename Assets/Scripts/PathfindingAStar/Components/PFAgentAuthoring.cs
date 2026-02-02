@@ -41,7 +41,8 @@ Binary      Decimal   Flags set
     [Flags]
     public enum PFAgentsStatus : byte
     {
-        None = 1 << 0, // 0000 0001
+        Default = 0,
+        Idle = 1 << 0, // 0000 0001
         Significant = 1 << 1, // 0000 0010
         Find = 1 << 2, // 0000 0100
         Process = 1 << 3, // 0000 1000

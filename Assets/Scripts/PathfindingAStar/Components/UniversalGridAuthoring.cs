@@ -38,7 +38,7 @@ namespace PFStar
                     (authoring.dimensions.y - 1) * authoring.cellSize * 0.5f
                 );
 
-                float3 cornerOrigin = position - offset + new float3(0, 1.0f, 0);
+                float3 cornerOrigin = position - offset + new float3(0, 0.3f, 0);
 
                 using var builder = new BlobBuilder(Allocator.Temp);
                 ref GridBlob root = ref builder.ConstructRoot<GridBlob>();
@@ -82,8 +82,8 @@ namespace PFStar
 
                             float3 localPos = math.transform(worldToWallLocal, cellWorldPos);
                             
-                            float margin = 0.7f + (authoring.cellSize * 0.5f / wallScale.x); 
-                            float marginZ = 0.7f + (authoring.cellSize * 0.5f / wallScale.z);           
+                            float margin = 0.59f + (authoring.cellSize * 0.5f / wallScale.x); 
+                            float marginZ = 0.59f + (authoring.cellSize * 0.5f / wallScale.z);           
 
                             if (math.abs(localPos.x) <= margin && math.abs(localPos.z) <= marginZ) 
                             {

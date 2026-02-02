@@ -122,14 +122,11 @@ namespace PFStar
             public float SeparationRadius;
             public float SeparationWeight;
 
-            private const float StopThresholdSq = 0.04f;
-            private const int MaxNeighborsTotal = 5;
-
             private void Execute(
                 [EntityIndexInQuery] int myIndex,
                 Entity entity,
                 ref DynamicBuffer<Waypoint> way,
-                ref MoveSettings moveData)
+                ref MoveSettings moveData, ref PFAgentState agentState)
             {
                 if (way.IsEmpty)
                 {
@@ -141,88 +138,118 @@ namespace PFStar
                 float3 currentPos = transform.Position;
                 ref var grid = ref GridBlob.Value;
 
-                int lastIndex = way.Length - 1;
-                float3 targetPos = way[lastIndex].point;
+                float3 targetPos = way[^1].point;
                 float3 toTarget = targetPos - currentPos;
-                float distSq = math.lengthsq(toTarget);
+                float distSqTotal = math.lengthsq(toTarget);
 
-                bool isFinalTarget = way.Length == 1;
-
-                float3 forward = math.normalize(moveData.velocity + 0.001f);
-                if (distSq < 0.36f || (!isFinalTarget && math.dot(forward, toTarget) < 0))
+                float arrivalDist = (way.Length == 1) ? 0.05f : 0.25f;
+                
+                if (distSqTotal < arrivalDist)
                 {
-                    way.RemoveAt(lastIndex);
-                    if (way.IsEmpty) return;
-
-                    lastIndex = way.Length - 1;
-                    targetPos = way[lastIndex].point;
-                    toTarget = targetPos - currentPos;
-                    distSq = math.lengthsq(toTarget);
-                }
-
-                if (isFinalTarget && distSq < StopThresholdSq)
-                {
-                    moveData.velocity = math.lerp(moveData.velocity, float3.zero, DeltaTime * 10f);
-                    return;
-                }
-
-                float3 dirToTarget = toTarget * math.rsqrt(distSq + 0.0001f);
-
-                float3 avoidanceForce = float3.zero;
-
-                int2 centerCell = (int2)math.floor(currentPos.xz / CellSize);
-                float radiusSq = SeparationRadius * SeparationRadius;
-                int totalChecked = 0;
-
-                for (int x = -1; x <= 1 && totalChecked < MaxNeighborsTotal; x++)
-                {
-                    for (int z = -1; z <= 1 && totalChecked < MaxNeighborsTotal; z++)
+                    way.RemoveAt(way.Length - 1);
+                    if (way.IsEmpty)
                     {
-                        int cellKey = GridUtils.GetSpatialHashKeyFromCell(centerCell + new int2(x, z));
-                        if (SpatialMap.TryGetFirstValue(cellKey, out int neighborIndex, out var iterator))
-                        {
-                            do
-                            {
-                                if (neighborIndex == myIndex) continue;
-                                float3 neighborPos = AllPositions[neighborIndex];
-                                float3 pushVec = currentPos - neighborPos;
-                                float dSq = math.lengthsq(pushVec);
+                        moveData.velocity = float3.zero;
+                        agentState.Flags = (byte)PFAgentsStatus.Idle; 
+                        return;
+                    }
+                    toTarget = way[^1].point - currentPos;
+                }
 
-                                if (dSq < radiusSq && dSq > 0.001f)
+                float3 dirToTarget = math.normalize(toTarget + 0.001f);
+
+                float3 separationForce = float3.zero;
+                int2 myGridCell = (int2)math.floor(currentPos.xz / CellSize);
+                float repulseDistSq = SeparationRadius * SeparationRadius;
+                int neighborsCount = 0;
+
+                if (SpatialMap.TryGetFirstValue(GridUtils.GetSpatialHashKeyFromCell(myGridCell), out int neighborIndex,
+                        out var it))
+                {
+                    do
+                    {
+                        if (neighborIndex == myIndex) continue;
+                        float3 diff = currentPos - AllPositions[neighborIndex];
+                        float dSq = math.lengthsq(diff);
+
+                        if (dSq < repulseDistSq && dSq > 0.001f)
+                        {
+                            separationForce += diff * (1.0f / (math.sqrt(dSq) + 0.001f));
+                            neighborsCount++;
+                        }
+                    } while (neighborsCount < 6 && SpatialMap.TryGetNextValue(out neighborIndex, ref it));
+                }
+
+                float3 wallPush = float3.zero;
+                int2 myCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin);
+
+                for (int x = -1; x <= 1; x++)
+                {
+                    for (int z = -1; z <= 1; z++)
+                    {
+                        int2 nCoord = myCoord + new int2(x, z);
+                        if (nCoord.x >= 0 && nCoord.x < grid.Dimensions.x && nCoord.y >= 0 &&
+                            nCoord.y < grid.Dimensions.y)
+                        {
+                            if (grid.CellsType[nCoord.y * grid.Dimensions.x + nCoord.x] == CellType.Wall)
+                            {
+                                float3 cellPos = grid.Origin +
+                                                 new float3(nCoord.x * grid.CellSize, 0, nCoord.y * grid.CellSize);
+                                float3 toAgent = currentPos - cellPos;
+                                toAgent.y = 0;
+                                float dist = math.length(toAgent);
+
+                                if (dist < grid.CellSize * 1.2f)
                                 {
-                                    float d = math.sqrt(dSq);
-                                    float distScale = isFinalTarget ? math.saturate(distSq) : 1.0f;
-                                    avoidanceForce += (pushVec / d) * (1.0f - d / SeparationRadius) * distScale;
-                                    totalChecked++;
+                                    wallPush += (toAgent / (dist + 0.001f)) * (grid.CellSize * 1.2f - dist);
                                 }
-                            } while (totalChecked < MaxNeighborsTotal &&
-                                     SpatialMap.TryGetNextValue(out neighborIndex, ref iterator));
+                            }
                         }
                     }
                 }
 
-                float3 sideDir = math.cross(dirToTarget, new float3(0, 1, 0));
-                float3 wallAvoidance = float3.zero;
+                float3 steering = dirToTarget + (separationForce * 0.15f) + (wallPush * 5.0f);
+                float3 targetVel = math.normalize(steering + 0.001f) * moveData.speed;
 
-                if (GridUtils.IsWallAtWorldPos(currentPos + dirToTarget * 0.4f, ref grid))
-                    wallAvoidance -= dirToTarget * 1.2f;
-                if (GridUtils.IsWallAtWorldPos(currentPos - sideDir * 0.4f, ref grid)) wallAvoidance += sideDir * 0.8f;
-                if (GridUtils.IsWallAtWorldPos(currentPos + sideDir * 0.4f, ref grid)) wallAvoidance -= sideDir * 0.8f;
+                moveData.velocity = math.lerp(moveData.velocity, targetVel, DeltaTime * 10.0f);
 
-                float3 steering = dirToTarget + (avoidanceForce * SeparationWeight) + wallAvoidance;
-                float3 targetVelocity = math.normalize(steering) * moveData.speed;
+                float3 movement = moveData.velocity * DeltaTime;
+                float3 nextPos = currentPos + movement;
 
-                if (GridUtils.IsWallAtWorldPos(currentPos + dirToTarget * 0.3f, ref grid)) targetVelocity *= 0.1f;
+                if (GridUtils.IsWallAtWorldPos(nextPos, ref grid))
+                {
+                    if (math.lengthsq(wallPush) > 0.01f)
+                    {
+                        float3 normal = math.normalize(wallPush);
+                        
+                        float3 slideMovement = movement - normal * math.dot(movement, normal);
 
-                moveData.velocity = math.lerp(moveData.velocity, targetVelocity, DeltaTime * 4.0f);
+                        float3 slidePos = currentPos + slideMovement;
+
+                        if (!GridUtils.IsWallAtWorldPos(slidePos, ref grid))
+                        {
+                            nextPos = slidePos;
+                        }
+                        else
+                        {
+                            nextPos = currentPos;
+                            moveData.velocity = float3.zero;
+                        }
+                    }
+                    else
+                    {
+                        nextPos = currentPos;
+                        moveData.velocity = float3.zero;
+                    }
+                }
 
                 if (math.lengthsq(moveData.velocity) > 0.01f)
                 {
-                    var targetRot = quaternion.LookRotationSafe(math.normalize(moveData.velocity), math.up());
-                    transform.Rotation = math.slerp(transform.Rotation, targetRot, DeltaTime * 6.0f);
+                    transform.Rotation = math.slerp(transform.Rotation,
+                        quaternion.LookRotationSafe(moveData.velocity, math.up()), DeltaTime * 8.0f);
                 }
 
-                transform.Position += moveData.velocity * DeltaTime;
+                transform.Position = nextPos;
                 AllTransforms[entity] = transform;
             }
         }

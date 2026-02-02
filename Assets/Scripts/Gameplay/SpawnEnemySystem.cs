@@ -92,7 +92,7 @@ namespace Gameplay
                 Destination = int2.zero
             };
 
-            MoveSettingsLookup[entity] = new MoveSettings { speed = random.NextFloat(3f, 8f) };
+            MoveSettingsLookup[entity] = new MoveSettings { speed = random.NextFloat(2f, 7f) };
             MetaLookup[entity] = new PFRequestMetadata { RequestTime = CurrentTime };
         }
     }
