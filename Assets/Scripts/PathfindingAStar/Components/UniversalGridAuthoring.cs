@@ -60,38 +60,49 @@ namespace PFStar
                 var walls = FindObjectsByType<WallAuthoring>(FindObjectsSortMode.None);
                 foreach (var wall in walls)
                 {
-                    float3 wallPos = wall.transform.position;
                     float3 wallScale = wall.transform.localScale;
-
                     float4x4 worldToWallLocal = math.inverse(wall.transform.localToWorldMatrix);
-                    
-                    var renderer = wall.GetComponent<Renderer>();
-                    Bounds b = renderer != null ? renderer.bounds : new Bounds(wallPos, wallScale); 
-    
-                    float3 minP = b.min;
-                    float3 maxP = b.max;
 
-                    int2 minCoord = GridUtils.WorldToCellCoord(minP - new float3(authoring.cellSize), cornerOrigin);
-                    int2 maxCoord = GridUtils.WorldToCellCoord(maxP + new float3(authoring.cellSize), cornerOrigin);
-    
+                    var renderer = wall.GetComponent<Renderer>();
+                    Bounds b = renderer != null ? renderer.bounds : new Bounds(wall.transform.position, wallScale);
+
+                    int2 minCoord = GridUtils.WorldToCellCoord(b.min, cornerOrigin);
+                    int2 maxCoord = GridUtils.WorldToCellCoord(b.max, cornerOrigin);
+
                     for (int y = math.max(0, minCoord.y); y <= math.min(authoring.dimensions.y - 1, maxCoord.y); y++)
                     {
-                        for (int x = math.max(0, minCoord.x); x <= math.min(authoring.dimensions.x - 1, maxCoord.x); x++)
+                        for (int x = math.max(0, minCoord.x);
+                             x <= math.min(authoring.dimensions.x - 1, maxCoord.x);
+                             x++)
                         {
-                            float3 cellWorldPos = cornerOrigin + new float3(x * authoring.cellSize, 0, y * authoring.cellSize);
+                            float3 cellCenter = cornerOrigin +
+                                                new float3(x * authoring.cellSize, 0, y * authoring.cellSize);
+                            float h = authoring.cellSize * 0.5f;
 
-                            float3 localPos = math.transform(worldToWallLocal, cellWorldPos);
-                            
-                            float margin = 0.59f + (authoring.cellSize * 0.5f / wallScale.x); 
-                            float marginZ = 0.59f + (authoring.cellSize * 0.5f / wallScale.z);           
+                            bool isWall =
+                                CheckPoint(cellCenter, worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(h, 0, h), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(-h, 0, h), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(h, 0, -h), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(-h, 0, -h), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(h, 0, 0), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(-h, 0, 0), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(0, 0, h), worldToWallLocal) ||
+                                CheckPoint(cellCenter + new float3(0, 0, -h), worldToWallLocal);
 
-                            if (math.abs(localPos.x) <= margin && math.abs(localPos.z) <= marginZ) 
+                            if (isWall)
                             {
                                 int index = GridUtils.CoordToIndex(new int2(x, y), authoring.dimensions.x);
                                 cells[index] = CellType.Wall;
                             }
                         }
                     }
+                }
+
+                bool CheckPoint(float3 worldPoint, float4x4 worldToWallLocal)
+                {
+                    float3 localPos = math.transform(worldToWallLocal, worldPoint);
+                    return math.abs(localPos.x) <= 0.505f && math.abs(localPos.z) <= 0.505f;
                 }
 
                 for (int i = 0; i < totalCells; i++)
@@ -130,40 +141,39 @@ namespace PFStar
                 AddComponent(entity, new GridBlobReference { Value = blobRef });
             }
         }
-        
+
         private void OnDrawGizmos()
         {
             var world = World.DefaultGameObjectInjectionWorld;
             if (world == null) return;
-    
+
             var entityManager = world.EntityManager;
             var query = entityManager.CreateEntityQuery(typeof(GridBlobReference));
-    
+
             if (!query.IsEmpty)
             {
-                
                 var gridRef = query.GetSingleton<GridBlobReference>();
                 if (!gridRef.Value.IsCreated) return;
 
                 ref var grid = ref gridRef.Value.Value;
-        
-                Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.4f); 
-                Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.1f); 
+
+                Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.4f);
+                Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.4f);
 
                 for (int i = 0; i < grid.CellsType.Length; i++)
                 {
                     bool isWall = grid.CellsType[i] == CellType.Wall;
-            
+
                     int2 coord = GridUtils.IndexToCoord(i, grid.Dimensions.x);
                     Vector3 pos = grid.Origin + new float3(coord.x * grid.CellSize, 0, coord.y * grid.CellSize);
 
                     if (isWall)
                     {
                         Gizmos.color = wallColor;
-                        Gizmos.DrawCube(pos, new Vector3(grid.CellSize, 0.2f, grid.CellSize));
-                
+                        Gizmos.DrawCube(pos, new Vector3(grid.CellSize, 0.25f, grid.CellSize));
+
                         Gizmos.color = Color.red;
-                        Gizmos.DrawWireCube(pos, new Vector3(grid.CellSize, 0.2f, grid.CellSize));
+                        Gizmos.DrawWireCube(pos, new Vector3(grid.CellSize, 0.25f, grid.CellSize));
                     }
                     else
                     {
@@ -173,6 +183,5 @@ namespace PFStar
                 }
             }
         }
-        
     }
 }
