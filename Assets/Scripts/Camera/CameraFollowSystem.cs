@@ -1,4 +1,4 @@
-using PFStar;
+using Gameplay.Player;
 using Unity.Entities;
 using Unity.Transforms;
 using UnityEngine;
@@ -14,10 +14,9 @@ namespace Camera
         {
             Dependency.Complete(); 
 
-            if (!SystemAPI.TryGetSingletonEntity<NavigationTargetGridData>(out Entity targetEntity))
-                return;
+            if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out Entity player)) return;
 
-            var ltw = EntityManager.GetComponentData<LocalToWorld>(targetEntity);
+            var ltw = EntityManager.GetComponentData<LocalToWorld>(player);
             float3 targetPos = ltw.Position;
 
             if (SystemAPI.ManagedAPI.TryGetSingleton<MainCameraTag>(out var cameraTag))
@@ -29,7 +28,7 @@ namespace Camera
 
                 Transform camTransform = cameraTag.CameraTransform;
                 camTransform.position = Vector3.Lerp(camTransform.position, desiredPos, 0.1f);
-                camTransform.LookAt((Vector3)targetPos);
+                camTransform.LookAt(targetPos);
             }
         }
     }

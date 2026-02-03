@@ -80,6 +80,9 @@ namespace PFStar
 
             [NativeDisableUnsafePtrRestriction] public NativeArray<int> Counter;
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
+            
+            private Entity _lastTarget;
+            private NavigationTargetGridData _lastTargetData;
 
             void Execute(
                 Entity entity,
@@ -90,6 +93,20 @@ namespace PFStar
             {
                 var reqRO = request.ValueRO;
                 Entity myTarget = reqRO.Focus;
+                
+                NavigationTargetGridData targetData;
+                
+                if (myTarget == _lastTarget)
+                {
+                    targetData = _lastTargetData;
+                }
+                else
+                {
+                    if (!TargetDataLookup.TryGetComponent(myTarget, out targetData)) return;
+                
+                    _lastTarget = myTarget;
+                    _lastTargetData = targetData;
+                }
 
                 var flags = state.ValueRO.Flags;
 
@@ -115,8 +132,6 @@ namespace PFStar
                 ref var gridBlobValue = ref GridBlob.Value;
                 bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
                 bool isAtDestination = math.all(GridUtils.WorldToCellCoord(currentPos, gridBlobValue.Origin) == reqRO.Destination);
-                
-                if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData)) return;
                 
                 var actualTargetCell = targetData.CurrentCell; 
 

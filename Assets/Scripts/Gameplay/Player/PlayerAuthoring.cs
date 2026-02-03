@@ -4,26 +4,29 @@ using UnityEngine;
 
 namespace Gameplay.Player
 {
-    public struct LeaderControl : IComponentData
+    public struct Player : IComponentData
     {
         public float MoveSpeed;
         public float3 InputDirection;
     }
+    
+    public struct PlayerTag : IComponentData { }
 
-    public class LeaderControlAuthoring : MonoBehaviour
+    public class PlayerAuthoring : MonoBehaviour
     {
         public float speed = 15f;
 
-        public class Baker : Baker<LeaderControlAuthoring>
+        public class Baker : Baker<PlayerAuthoring>
         {
-            public override void Bake(LeaderControlAuthoring authoring)
+            public override void Bake(PlayerAuthoring authoring)
             {
                 var entity = GetEntity(TransformUsageFlags.Dynamic | TransformUsageFlags.Renderable);
                 
-                AddComponent(entity, new LeaderControl 
+                AddComponent(entity, new Player 
                 { 
                     MoveSpeed = authoring.speed 
                 });
+                AddComponent(entity, new PlayerTag());
             }
         }
     }

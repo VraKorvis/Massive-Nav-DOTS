@@ -114,7 +114,7 @@ Binary      Decimal   Flags set
                     Destination = int2.zero
                 });
 
-                AddComponent(entity, new PathAgentStatus { Value = authoring.status });
+                // AddComponent(entity, new PathAgentStatus { Value = authoring.status });
                 AddComponent(entity, new PFRequestMetadata { RequestTime = 0 });
 
                 AddComponent<PathAgentStatusAddPathRequestTag>(entity);

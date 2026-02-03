@@ -35,7 +35,7 @@ namespace Gameplay.Player
             public float3 Input;
             public float DeltaTime;
 
-            private void Execute(ref LocalTransform transform, in LeaderControl control)
+            private void Execute(ref LocalTransform transform, in Player control)
             {
                 transform.Position += Input * control.MoveSpeed * DeltaTime;
             }

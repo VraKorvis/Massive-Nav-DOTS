@@ -1,3 +1,4 @@
+using Gameplay.Player;
 using PFStar;
 using Unity.Burst;
 using Unity.Collections;
@@ -18,7 +19,7 @@ namespace Gameplay
         
         public void OnCreate(ref SystemState state)
         {
-            state.RequireForUpdate<NavigationTargetGridData>();
+            state.RequireForUpdate<PlayerTag>();
             state.RequireForUpdate<SpawnerConfig>();
             
             _requestLookup = state.GetComponentLookup<PFRequestAgent>(false);
@@ -31,7 +32,7 @@ namespace Gameplay
         public void OnUpdate(ref SystemState state)
         {
             var config = SystemAPI.GetSingleton<SpawnerConfig>();
-            var targetEntity = SystemAPI.GetSingletonEntity<NavigationTargetGridData>();
+            var targetEntity = SystemAPI.GetSingletonEntity<PlayerTag>();
     
             var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.TempJob);
             
