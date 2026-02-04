@@ -47,14 +47,29 @@ namespace PFStar
                 root.Origin = cornerOrigin;
                 root.CellSize = authoring.cellSize;
 
-                int totalCells = authoring.dimensions.x * authoring.dimensions.y;
+                int width = authoring.dimensions.x;
+                int height = authoring.dimensions.y;
+                
+                int totalCells = width * height;
                 var cells = builder.Allocate(ref root.CellsType, totalCells);
                 var weights = builder.Allocate(ref root.Weights, totalCells);
 
+                
                 for (int i = 0; i < totalCells; i++)
                 {
-                    cells[i] = CellType.Ground;
-                    weights[i] = 1.0f;
+                    int x = i % width;
+                    int y = i / width;
+
+                    if (x == 0 || y == 0 || x == width - 1 || y == height - 1)
+                    {
+                        cells[i] = CellType.Wall;
+                        weights[i] = float.PositiveInfinity;
+                    }
+                    else
+                    {
+                        cells[i] = CellType.Ground;
+                        weights[i] = 1.0f;
+                    }
                 }
 
                 var walls = FindObjectsByType<WallAuthoring>(FindObjectsSortMode.None);
@@ -94,6 +109,8 @@ namespace PFStar
                             {
                                 int index = GridUtils.CoordToIndex(new int2(x, y), authoring.dimensions.x);
                                 cells[index] = CellType.Wall;
+                                weights[index] = float.PositiveInfinity;
+
                             }
                         }
                     }

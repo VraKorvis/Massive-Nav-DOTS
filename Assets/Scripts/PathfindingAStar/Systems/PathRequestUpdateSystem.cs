@@ -80,35 +80,34 @@ namespace PFStar
 
             [NativeDisableUnsafePtrRestriction] public NativeArray<int> Counter;
             [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
-            
-            private Entity _lastTarget;
-            private NavigationTargetGridData _lastTargetData;
 
             void Execute(
                 Entity entity,
                 [ChunkIndexInQuery] int chunkIndex,
                 RefRO<LocalTransform> transform,
+                RefRO<PFRequestMetadata> metadata,
                 RefRW<PFRequestAgent> request,
                 RefRW<PFAgentState> state)
             {
                 var reqRO = request.ValueRO;
                 Entity myTarget = reqRO.Focus;
-                
-                NavigationTargetGridData targetData;
-                
-                if (myTarget == _lastTarget)
-                {
-                    targetData = _lastTargetData;
-                }
-                else
-                {
-                    if (!TargetDataLookup.TryGetComponent(myTarget, out targetData)) return;
-                
-                    _lastTarget = myTarget;
-                    _lastTargetData = targetData;
-                }
 
                 var flags = state.ValueRO.Flags;
+                
+                var forceUpdate = (flags & (byte)PFAgentsStatus.ForceUpdate) != 0;
+                if (forceUpdate) 
+                {
+                    if (!TargetDataLookup.TryGetComponent(myTarget, out var target))
+                    {
+                        return;
+                    }
+                    request.ValueRW.Destination = target.CurrentCell;
+                    FillRequest(ref request.ValueRW, target.CurrentCell, transform.ValueRO.Position, GridOrigin,
+                        entity.Index, CurrentTime, metadata.ValueRO.Priority);  
+                    SetFlagsAfterRequest(ref flags);
+                    state.ValueRW.Flags = flags;
+                    return;
+                }
 
                 if ((flags & (byte)PFAgentsStatus.Find) != 0) return;
 
@@ -117,10 +116,14 @@ namespace PFStar
                 bool isIdle = (flags & (byte)PFAgentsStatus.Idle) != 0;
 
                 if (!cooldownOver)
+                {
                     return;
-                
+                }
+
                 if (!TargetDataLookup.HasComponent(myTarget))
+                {
                     return;
+                }
                 
                 var currentPos = transform.ValueRO.Position;
                 
@@ -133,11 +136,19 @@ namespace PFStar
                 bool targetMoved = TargetChangedLookup.IsComponentEnabled(myTarget);
                 bool isAtDestination = math.all(GridUtils.WorldToCellCoord(currentPos, gridBlobValue.Origin) == reqRO.Destination);
                 
+                if (!TargetDataLookup.TryGetComponent(myTarget, out var targetData))
+                {
+                    return;
+                }
+                
                 var actualTargetCell = targetData.CurrentCell; 
 
                 if (!targetMoved && !isUrgent && !isStuck && !(isIdle && (!isAtDestination || !math.all(reqRO.Destination == actualTargetCell)))) 
                 {
-                    if (!isIdle) return;
+                    if (!isIdle)
+                    {
+                        return;
+                    }
                 }
                 
                 if (!isUrgent && !targetMoved)
@@ -159,12 +170,16 @@ namespace PFStar
                     }
                 }
 
-                int* ptr = (int*)Counter.GetUnsafePtr();
-                int currentRequestIndex = System.Threading.Interlocked.Increment(ref ptr[0]);
-                if (currentRequestIndex > MaxRequests) return;
+                bool isHighPriority = metadata.ValueRO.Priority >= 100;
 
+                if (!isHighPriority)
+                {
+                    int* ptr = (int*)Counter.GetUnsafePtr();
+                    if (System.Threading.Interlocked.Increment(ref ptr[0]) > MaxRequests) return;
+                }
+                
                 FillRequest(ref request.ValueRW, targetData.CurrentCell, transform.ValueRO.Position, GridOrigin,
-                    entity.Index, CurrentTime);
+                    entity.Index, CurrentTime, metadata.ValueRO.Priority);
                 SetFlagsAfterRequest(ref flags);
                 state.ValueRW.Flags = flags;
             }
@@ -180,22 +195,31 @@ namespace PFStar
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void FillRequest(ref PFRequestAgent req, int2 targetCell, float3 pos, float3 origin,
-                int entityIndex, float time)
+                int entityIndex, float time, int priority = 0)
             {
                 req.Destination = targetCell;
                 req.StartCoord = GridUtils.WorldToCellCoord(pos, origin);
 
-                float jitter = (entityIndex % 32) * 0.02f;
-                req.NextAllowedUpdateTime = time + 0.3f + jitter;
+                if (priority >= 100) 
+                {
+                    req.NextAllowedUpdateTime = 0;
+                }
+                else 
+                {
+                    float jitter = (entityIndex % 32) * 0.02f;
+                    req.NextAllowedUpdateTime = time + 0.3f + jitter;
+                }
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private void SetFlagsAfterRequest(ref byte flags)
             {
                 flags |= (byte)PFAgentsStatus.Find;
-                flags &= (byte)~PFAgentsStatus.Idle;
-                flags &= (byte)~PFAgentsStatus.Process;
-                flags &= (byte)~PFAgentsStatus.Significant;
+                
+                flags &= (byte)~(PFAgentsStatus.Idle | 
+                                 PFAgentsStatus.Process | 
+                                 PFAgentsStatus.Significant | 
+                                 PFAgentsStatus.ForceUpdate);
             }
         }
     }

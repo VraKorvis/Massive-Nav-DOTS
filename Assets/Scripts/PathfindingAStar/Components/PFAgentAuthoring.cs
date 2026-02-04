@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.CompilerServices;
 using OptRenderer;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -45,7 +46,8 @@ Binary      Decimal   Flags set
         Idle = 1 << 0, // 0000 0001
         Significant = 1 << 1, // 0000 0010
         Find = 1 << 2, // 0000 0100
-        Process = 1 << 3, // 0000 1000
+        Process = 1 << 3,
+        ForceUpdate = 1 << 6// 0000 1000
     }
 
     public struct PFAgentState : IComponentData
@@ -68,23 +70,27 @@ Binary      Decimal   Flags set
     public struct PFRequestMetadata : IComponentData
     {
         public double RequestTime;
+        public int Priority;
     }
 
     public struct SortableRequest
     {
         public Entity Entity;
         public double RequestTime;
+        public int Priority;
     }
 
     public struct RequestComparer : IComparer<SortableRequest>
     {
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int Compare(SortableRequest x, SortableRequest y)
         {
-            if (x.Entity == Entity.Null) return y.Entity == Entity.Null ? 0 : 1;
-            if (y.Entity == Entity.Null) return -1;
-            
+            int priorityDiff = y.Priority - x.Priority;
+            if (priorityDiff != 0) return priorityDiff;
+
             if (x.RequestTime < y.RequestTime) return -1;
-            return x.RequestTime > y.RequestTime ? 1 : 0;
+            if (x.RequestTime > y.RequestTime) return 1;
+            return 0;
         }
     }
 

@@ -1,3 +1,4 @@
+using Gameplay.Player;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
@@ -18,7 +19,6 @@ namespace PFStar
         {
             var moveJob = new PathMoveJob { DeltaTime = SystemAPI.Time.DeltaTime };
             state.Dependency = moveJob.ScheduleParallel(state.Dependency);
-            state.Enabled = false;
         }
 
         [BurstCompile]
@@ -29,7 +29,8 @@ namespace PFStar
             private void Execute(
                 ref DynamicBuffer<Waypoint> way,
                 ref MoveSettings moveData,
-                ref LocalTransform transform)
+                ref LocalTransform transform,
+                in PlayerTag  playerTag)
             {
                 if (way.IsEmpty) return;
 

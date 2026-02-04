@@ -6,7 +6,6 @@ namespace PFStar
     public struct NavigationSettings : IComponentData
     {
         public int MaxRequestsPerFrame;
-        public int MaxPossibleAgents;
         public int MaxPerFrame;
         public int IterationLimit;
         public float GreedyCoef;
@@ -27,10 +26,6 @@ namespace PFStar
 
         [Header("A* Logic (PathFindingSystem)")]
         [Tooltip("Max entities to pre-allocate memory for. Recommended: Matches your average unit count (e.g., 1024-5000).")]
-        [Range(100, 10000)]
-        public int maxPossibleAgents = 1024;
-
-        [Tooltip("Max requests processed per frame. Recommended: 128-512 (higher = smoother movement, lower = higher FPS).")]
         [Range(100, 10000)]
         public int maxPerFrame = 512;
 
@@ -67,7 +62,6 @@ namespace PFStar
                 AddComponent(entity, new NavigationSettings
                 {
                     MaxRequestsPerFrame = authoring.maxRequestsPerFrame,
-                    MaxPossibleAgents = authoring.maxPossibleAgents,
                     MaxPerFrame = authoring.maxPerFrame,
                     IterationLimit = authoring.iterationLimit,
                     GreedyCoef = authoring.greedyCoef,

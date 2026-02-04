@@ -1,3 +1,4 @@
+using Gameplay;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -19,11 +20,13 @@ namespace PFStar
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridTag>();
             _transformLookup = state.GetComponentLookup<LocalTransform>(false);
             _agentQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<PFAgentState>()
                 .WithAll<LocalTransform>()
                 .WithAll<MoveSettings>()
+                .WithAll<MinionTag>()
                 .Build(ref state);
 
             _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
@@ -182,7 +185,7 @@ namespace PFStar
 
                 float3 wallPush = float3.zero;
                 int2 myCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin);
-
+                //TODO if (((nx | ny | (width - 1 - nx) | (height - 1 - ny)) & 0x80000000) == 0)
                 for (int x = -1; x <= 1; x++)
                 {
                     for (int z = -1; z <= 1; z++)

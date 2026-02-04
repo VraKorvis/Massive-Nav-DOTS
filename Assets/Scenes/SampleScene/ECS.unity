@@ -338,8 +338,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PathfindingAStar.UniversalGridAuthoring
   dimensions:
-    x: 100
-    y: 100
+    x: 99
+    y: 99
   cellSize: 1
   inflationRadius: 1
 --- !u!1 &331948601
@@ -626,7 +626,7 @@ MeshCollider:
   m_LayerOverridePriority: 0
   m_IsTrigger: 0
   m_ProvidesContacts: 0
-  m_Enabled: 1
+  m_Enabled: 0
   serializedVersion: 5
   m_Convex: 0
   m_CookingOptions: 30
@@ -1384,7 +1384,7 @@ Transform:
   m_GameObject: {fileID: 1060872378}
   serializedVersion: 2
   m_LocalRotation: {x: -0, y: 0.087769866, z: -0, w: 0.9961408}
-  m_LocalPosition: {x: 35.1, y: 0, z: 6.6}
+  m_LocalPosition: {x: 33.8, y: 0, z: 5.5}
   m_LocalScale: {x: 18.84467, y: 1, z: 1.2487514}
   m_ConstrainProportionsScale: 0
   m_Children: []

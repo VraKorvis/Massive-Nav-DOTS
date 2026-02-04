@@ -1,3 +1,4 @@
+using PFStar;
 using Unity.Entities;
 using Unity.Mathematics;
 using UnityEngine;
@@ -27,6 +28,27 @@ namespace Gameplay.Player
                     MoveSpeed = authoring.speed 
                 });
                 AddComponent(entity, new PlayerTag());
+                AddComponent(entity, new PFAgentState()
+                {
+                    Flags = (byte)PFAgentsStatus.Default
+                });
+                
+                AddComponent(entity, new PFRequestAgent()
+                {
+                    Owner = entity,
+                    Focus = Entity.Null,
+                    StartCoord = int2.zero,
+                    Destination = int2.zero
+                });
+                
+                AddBuffer<Waypoint>(entity);
+                AddComponent(entity, new PFRequestMetadata()
+                {
+                    Priority = 255,
+                });
+                
+
+               
             }
         }
     }

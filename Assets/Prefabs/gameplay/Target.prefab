@@ -14,6 +14,7 @@ GameObject:
   - component: {fileID: 4505104498895363193}
   - component: {fileID: 3754255799680475955}
   - component: {fileID: 6031396713903178368}
+  - component: {fileID: -6891376965847832028}
   m_Layer: 0
   m_Name: Target
   m_TagString: Untagged
@@ -143,3 +144,18 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Gameplay.Player.LeaderControlAuthoring
   speed: 15
+--- !u!114 &-6891376965847832028
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 7274940986766218970}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: c60f940155f449e88444c93cdd7bef2f, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PFStar.MoveSettingsAuthoring
+  isMoving: 1
+  speed: 7.9
+  startDelay: 0.1

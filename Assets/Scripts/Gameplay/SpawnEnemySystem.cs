@@ -94,7 +94,7 @@ namespace Gameplay
             };
 
             MoveSettingsLookup[entity] = new MoveSettings { speed = random.NextFloat(2f, 7f) };
-            MetaLookup[entity] = new PFRequestMetadata { RequestTime = CurrentTime };
+            MetaLookup[entity] = new PFRequestMetadata { RequestTime = CurrentTime, Priority = 0 };
         }
     }
 }
