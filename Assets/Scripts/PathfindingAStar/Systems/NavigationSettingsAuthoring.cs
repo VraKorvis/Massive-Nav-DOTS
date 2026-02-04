@@ -22,7 +22,7 @@ namespace PFStar
         [Header("Requests (PathRequestUpdateSystem)")]
         [Tooltip("Hard limit on how many agents can issue a pathfinding request in a single frame. Prevents buffer overflow. Recommended: 1000-5000.")]
         [Range(100, 10000)]
-        public int maxRequestsPerFrame = 5000;
+        public int maxRequestsPerFrame = 1024;
 
         [Header("A* Logic (PathFindingSystem)")]
         [Tooltip("Max entities to pre-allocate memory for. Recommended: Matches your average unit count (e.g., 1024-5000).")]

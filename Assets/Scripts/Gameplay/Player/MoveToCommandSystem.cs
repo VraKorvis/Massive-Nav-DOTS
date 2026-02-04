@@ -5,13 +5,12 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
-using UnityEngine;
 
 namespace Gameplay.Player
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(ClickClassificationSystem))]
-    [UpdateBefore(typeof(PathRequestUpdateSystem))]
+    [UpdateBefore(typeof(PathRequestUpdateStatusSystem))]
     [BurstCompile]
     public partial struct MoveToCommandSystem : ISystem
     {
