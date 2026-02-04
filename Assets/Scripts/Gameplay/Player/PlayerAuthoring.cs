@@ -47,6 +47,7 @@ namespace Gameplay.Player
                     Priority = 255,
                 });
                 
+                AddComponent(entity, new DynamicTargetTrackingMarkerTag());
 
                
             }
