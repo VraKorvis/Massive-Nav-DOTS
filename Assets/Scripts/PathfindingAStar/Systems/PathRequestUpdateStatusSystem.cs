@@ -1,4 +1,3 @@
-using Gameplay.Player;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
@@ -65,7 +64,7 @@ namespace PFStar
         }
 
         [BurstCompile]
-        [WithNone(typeof(PlayerTag))]
+        [WithAll(typeof(DynamicTargetTrackingMarkerTag))]
         public partial struct PathRequestStatusJob : IJobEntity
         {
             public int MaxRequests;

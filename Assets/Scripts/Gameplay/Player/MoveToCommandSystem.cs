@@ -82,6 +82,7 @@ namespace Gameplay.Player
                     ecb.SetComponent(markerEntity, LocalTransform.FromPosition(targetWorldPos));
                     ecb.SetComponentEnabled<TargetChangedTag>(markerEntity, true);
                     ecb.SetComponent(markerEntity, new NavigationTargetGridData { CurrentCell = clickCell });
+                    ecb.SetComponentEnabled<DynamicTargetTrackingMarkerTag>(playerEntity, false);
 
                 }
                 _moveToCommandLookup.SetComponentEnabled(markerEntity, false);

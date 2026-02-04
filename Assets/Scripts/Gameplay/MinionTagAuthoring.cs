@@ -1,3 +1,4 @@
+using PFStar;
 using Unity.Entities;
 using UnityEngine;
 
@@ -13,6 +14,8 @@ namespace Gameplay
             {
                 var entity = GetEntity(TransformUsageFlags.Dynamic);
                 AddComponent<MinionTag>(entity);
+                AddComponent<DynamicTargetTrackingMarkerTag>(entity);
+                SetComponentEnabled<DynamicTargetTrackingMarkerTag>(entity, true);
             }
         }
     }
