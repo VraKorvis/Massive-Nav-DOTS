@@ -30,7 +30,7 @@ namespace Gameplay.Player
                 AddComponent(entity, new PlayerTag());
                 AddComponent(entity, new PFAgentState()
                 {
-                    Flags = (byte)PFAgentsStatus.Default
+                    Flags = (byte)PFAgentStatus.Default
                 });
                 
                 AddComponent(entity, new PFRequestAgent()

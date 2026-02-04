@@ -21,6 +21,7 @@ namespace Input
                 if (!SystemAPI.TryGetSingletonEntity<ClickMarkerTag>(out var markerEntity)) continue;
 
                 SystemAPI.SetComponent(markerEntity, new MoveToCommand { WorldPosition = clickData.ValueRO.WorldPosition });
+                SystemAPI.SetComponent(markerEntity, new NavigationTargetGridData());
                 SystemAPI.SetComponentEnabled<MoveToCommand>(markerEntity, true);
                 SystemAPI.SetComponentEnabled<IsClickTag>(entity, false);
             }     

@@ -1,9 +1,8 @@
-using System.Runtime.CompilerServices;
+using Gameplay.Player;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
-using Unity.Mathematics;
 
 namespace PFStar
 {
@@ -15,9 +14,7 @@ namespace PFStar
         private NativeArray<int> _requestsCounter;
         private int _staggerStep; 
         
-        private ComponentLookup<NavigationTargetGridData> _targetDataLookup;
         private ComponentLookup<TargetChangedTag> _targetChangedLookup;
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         public void OnCreate(ref SystemState state)
         {
@@ -32,9 +29,7 @@ namespace PFStar
             _frameCount = 0;
             _staggerStep = 10;
 
-            _targetDataLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
             _targetChangedLookup = state.GetComponentLookup<TargetChangedTag>(true);
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
         }
 
         public void OnDestroy(ref SystemState state)
@@ -70,6 +65,7 @@ namespace PFStar
         }
 
         [BurstCompile]
+        [WithNone(typeof(PlayerTag))]
         public partial struct PathRequestStatusJob : IJobEntity
         {
             public int MaxRequests;
@@ -93,19 +89,19 @@ namespace PFStar
 
                 if (!EntityLookup.Exists(request.ValueRO.Focus))
                 {
-                    state.ValueRW.Flags = (byte)PFAgentsStatus.Idle;
+                    state.ValueRW.Flags = (byte)PFAgentStatus.Idle;
                     return;
                 }
                 
-                if ((flags & (byte)(PFAgentsStatus.Find | PFAgentsStatus.Process)) != 0)
+                if ((flags & (byte)(PFAgentStatus.Find | PFAgentStatus.Process)) != 0)
                     return;
 
-                bool isForce = (flags & (byte)PFAgentsStatus.ForceUpdate) != 0;
+                bool isForce = (flags & (byte)PFAgentStatus.ForceUpdate) != 0;
                 if (!isForce && CurrentTime < request.ValueRO.NextAllowedUpdateTime)
                     return;
 
                 bool targetMoved = TargetChangedLookup.IsComponentEnabled(request.ValueRO.Focus);
-                bool isUrgent = (flags & (byte)PFAgentsStatus.Significant) != 0;
+                bool isUrgent = (flags & (byte)PFAgentStatus.Significant) != 0;
 
                 bool isScheduledFrame = (entity.Index % StaggerStep) == CurrentStaggerIndex;
 
@@ -114,7 +110,7 @@ namespace PFStar
                     int* ptr = (int*)Counter.GetUnsafePtr();
                     if (System.Threading.Interlocked.Increment(ref ptr[0]) <= MaxRequests)  
                     {
-                        state.ValueRW.Flags |= (byte)PFAgentsStatus.Find;
+                        state.ValueRW.Flags |= (byte)PFAgentStatus.Find;
                     }
                 }
             }

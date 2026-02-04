@@ -30,9 +30,14 @@ namespace PFStar
                 ref DynamicBuffer<Waypoint> way,
                 ref MoveSettings moveData,
                 ref LocalTransform transform,
+                ref PFAgentState agentState,
                 in PlayerTag  playerTag)
             {
-                if (way.IsEmpty) return;
+                if (way.IsEmpty)
+                {
+                    agentState.Flags = (byte)PFAgentStatus.Idle;
+                    return;
+                }
 
                 int lastIndex = way.Length - 1;
                 float3 targetPos = way[lastIndex].point;

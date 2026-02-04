@@ -72,9 +72,9 @@ namespace PFStar
             {
                 var flags = state.ValueRO.Flags;
         
-                flags &= (byte)~PFAgentsStatus.Find;
-                flags &= (byte)~PFAgentsStatus.Process;
-                flags |= (byte)PFAgentsStatus.Significant;
+                flags &= (byte)~PFAgentStatus.Find;
+                flags &= (byte)~PFAgentStatus.Process;
+                flags |= (byte)PFAgentStatus.Significant;
         
                 state.ValueRW.Flags = flags;
             }

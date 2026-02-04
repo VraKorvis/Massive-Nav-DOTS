@@ -8,17 +8,7 @@ using UnityEngine;
 
 namespace PFStar
 {
-    [Serializable]
-    public struct Waypoint : IBufferElementData
-    {
-        public float3 point;
-    }
-
-    public struct PathAgentStatus : IComponentData
-    {
-        public AgentStatus Value;
-    }
-
+    
 /*
 Binary      Decimal   Flags set
 0000 0000   0         not used
@@ -40,33 +30,35 @@ Binary      Decimal   Flags set
 */
 
     [Flags]
-    public enum PFAgentsStatus : byte
+    public enum PFAgentStatus : byte
     {
+        // 0000 0000 | No state assigned
         Default = 0,
-        Idle = 1 << 0, // 0000 0001
-        Significant = 1 << 1, // 0000 0010
-        Find = 1 << 2, // 0000 0100
-        Process = 1 << 3,
-        ForceUpdate = 1 << 6// 0000 1000
+        
+        // 0000 0001 | Agent is stationary, no active tasks
+        Idle = 1 << 0,
+        
+        // 0000 0010 | Significant movement detected (> 10 cells)
+        Significant = 1 << 1,
+        
+        // 0000 0100 | REQUEST: Start pathfinding calculation
+        Find = 1 << 2,
+        
+        // 0000 1000 | ACTIVE: Job is scheduled and running
+        Processing = 1 << 3,
+        
+        // 0001 0000 | READY: Path found, agent can move
+        Process = 1 << 4,
+        
+        // 0100 0000 | SYSTEM: Bypass logic, force data refresh
+        ForceUpdate = 1 << 6
     }
 
     public struct PFAgentState : IComponentData
     {
         public byte Flags;
     }
-
-
-    public struct PathAgentStatusAddPathRequestTag : IComponentData, IEnableableComponent
-    {
-    }
-
-    public enum AgentStatus
-    {
-        Find,
-        None,
-        Process,
-    }
-
+    
     public struct PFRequestMetadata : IComponentData
     {
         public double RequestTime;
@@ -105,7 +97,6 @@ Binary      Decimal   Flags set
 
     public class PFAgentAuthoring : MonoBehaviour
     {
-        public AgentStatus status;
 
         public class PathAgentStatusBaker : Baker<PFAgentAuthoring>
         {
@@ -120,14 +111,11 @@ Binary      Decimal   Flags set
                     Destination = int2.zero
                 });
 
-                // AddComponent(entity, new PathAgentStatus { Value = authoring.status });
                 AddComponent(entity, new PFRequestMetadata { RequestTime = 0 });
-
-                AddComponent<PathAgentStatusAddPathRequestTag>(entity);
-
+                
                 AddComponent(entity, new PFAgentState
                 {
-                    Flags = (byte)PFAgentsStatus.Significant
+                    Flags = (byte)PFAgentStatus.Significant
                 });
 
                 AddComponent(entity, new AgentVisualParams { EffectValue = 1f });

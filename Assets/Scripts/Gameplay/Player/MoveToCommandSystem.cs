@@ -67,7 +67,7 @@ namespace Gameplay.Player
 
                 if (isPathValid)
                 {
-                    ecb.AddComponent(playerEntity, new PFRequestAgent
+                    ecb.SetComponent(playerEntity, new PFRequestAgent
                     {
                         Focus = markerEntity,
                         StartCoord = GridUtils.WorldToCellCoord(_transformLookup[playerEntity].Position, blob.Origin),
@@ -75,7 +75,7 @@ namespace Gameplay.Player
                         NextAllowedUpdateTime = 0
                     });
                     
-                    ecb.SetComponent(playerEntity, new PFAgentState { Flags = (byte)PFAgentsStatus.Find });
+                    ecb.SetComponent(playerEntity, new PFAgentState { Flags = (byte)PFAgentStatus.Find });
                     ecb.SetComponent(playerEntity, new PFRequestMetadata { Priority = 255 });
                     
                     float3 targetWorldPos = GridUtils.CellToWorldCoord(clickCell, blob.Origin);

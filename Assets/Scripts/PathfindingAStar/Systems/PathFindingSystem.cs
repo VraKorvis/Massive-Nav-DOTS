@@ -1,4 +1,3 @@
-using System;
 using Gameplay.Player;
 using Unity.Burst;
 using Unity.Collections;
@@ -6,6 +5,7 @@ using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Profiling;
 using Unity.Transforms;
 using UnityEngine;
 
@@ -147,6 +147,11 @@ namespace PFStar
     [BurstCompile]
     public partial struct PathFindingSystem : ISystem
     {
+#if UNITY_EDITOR
+        private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new("[PF] Player.Pathfinding.Scheduling");
+#endif
+
+
         private const int VipOffset = 1;
         private const int VipIterationLimit = 10000;
 
@@ -168,7 +173,7 @@ namespace PFStar
         private ComponentLookup<NavigationTargetGridData> _navigationTargetLookup;
         private ComponentLookup<PFRequestAgent> _pathRequestLookup;
         private ComponentLookup<PFAgentState> _agentStateLookup;
-        
+
         private ComponentLookup<GridBlobReference> _gridBlobLookup;
         private BufferLookup<Waypoint> _waypointLookup;
 
@@ -216,7 +221,7 @@ namespace PFStar
             _transformLookup = state.GetComponentLookup<LocalTransform>(true);
             _pathRequestLookup = state.GetComponentLookup<PFRequestAgent>(false);
             _navigationTargetLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
-            
+
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
             _agentStateLookup = state.GetComponentLookup<PFAgentState>(false);
         }
@@ -233,6 +238,7 @@ namespace PFStar
             _navigationTargetLookup.Update(ref state);
             _agentStateLookup.Update(ref state);
 
+            var batchSize = navSettings.InnerLoopBatchSize;
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var gridBlobRef = _gridBlobLookup[gridEntity].Value;
             int dimX = gridBlobRef.Value.Dimensions.x;
@@ -260,15 +266,22 @@ namespace PFStar
                 _openSet = new NativeMinHeap(totalCapacity, Allocator.Persistent);
             }
 
+
+#if UNITY_EDITOR
+            var markerScope = k_ProfilePlayerPathLogic.Auto();
+#endif
+            
             if (!_playerQuery.IsEmpty)
             {
-                var ecb = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>()
-                    .CreateCommandBuffer(state.WorldUnmanaged);
-
                 var playerEntity = _playerQuery.GetSingletonEntity();
                 var playerState = SystemAPI.GetComponent<PFAgentState>(playerEntity);
-                if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) && (playerState.Flags & (byte)PFAgentsStatus.Find) != 0)
+                if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) &&
+                    (playerState.Flags & (byte)PFAgentStatus.Find) != 0)
                 {
+                    var pState = _agentStateLookup[playerEntity];
+                    pState.Flags &= (byte)~PFAgentStatus.Find;
+                    _agentStateLookup[playerEntity] = pState;
+
                     var playerRequest = SystemAPI.GetComponent<PFRequestAgent>(playerEntity);
                     var playerJob = new PlayerPathJob
                     {
@@ -289,11 +302,15 @@ namespace PFStar
                         Neighbours = _neighbours,
                         AgentStateLookup = _agentStateLookup,
                     };
+
                     state.Dependency = playerJob.Schedule(state.Dependency);
-                    ecb.RemoveComponent<PFRequestAgent>(playerEntity);
                 }
             }
-
+            
+#if UNITY_EDITOR
+            markerScope.Dispose();
+#endif
+            
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
 
@@ -310,23 +327,23 @@ namespace PFStar
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
 
             var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJobHandle);
-            
+
             var prepareHandle = new PrepareAndMarkJob
             {
-                MaxToProcess = agentsToProcess,
+                ActualCount = sortableList.Length,
                 GridOrigin = gridBlobRef.Value.Origin,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
-                
+
                 SortedList = sortableList,
                 ProcessingEntities = processingEntities,
                 PathArray = pathArray,
-                
+
                 PathRequestLookup = _pathRequestLookup,
                 AgentStateLookup = _agentStateLookup,
                 NavigationTargetLookup = _navigationTargetLookup,
                 TransformLookup = _transformLookup,
-            }.Schedule(sortHandle);
-            
+            }.Schedule(agentsToProcess, batchSize, sortHandle);
+
             var findHandle = new FindPathAStarJob
             {
                 Offset = VipOffset,
@@ -336,7 +353,7 @@ namespace PFStar
                 CurrentFrame = Time.frameCount,
                 GreedyCoef = navSettings.GreedyCoef,
                 IterationLimit = navSettings.IterationLimit,
-               
+
                 ProcessingEntities = processingEntities,
                 GridStride = _currentBufferSize,
                 WaypointsLookup = _waypointLookup,
@@ -344,12 +361,12 @@ namespace PFStar
                 AgentStateLookup = _agentStateLookup,
                 PathList = pathArray,
                 SearchVersions = _searchVersions,
-                
+
                 CostSoFar = _costSoFar,
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
-            }.Schedule(agentsToProcess, navSettings.InnerLoopBatchSize, prepareHandle);
+            }.Schedule(agentsToProcess, batchSize, prepareHandle);
 
             state.Dependency = findHandle;
 
@@ -415,17 +432,16 @@ namespace PFStar
                     AStarCrowd.BuildPath(ref GridBlob.Value, ref box);
 
                     var state = AgentStateLookup[PlayerEntity];
-                    state.Flags = (byte)PFAgentsStatus.Process;
+                    state.Flags = (byte)(Waypoints.Length > 0 ? PFAgentStatus.Process : PFAgentStatus.Idle);
                     AgentStateLookup[PlayerEntity] = state;
                 }
                 else
                 {
                     var state = AgentStateLookup[PlayerEntity];
-                    state.Flags = (byte)PFAgentsStatus.Idle;
+                    state.Flags = (byte)PFAgentStatus.Idle;
                     AgentStateLookup[PlayerEntity] = state;
                 }
             }
-
         }
 
         [BurstCompile]
@@ -436,7 +452,7 @@ namespace PFStar
 
             void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
             {
-                if ((state.Flags & (byte)PFAgentsStatus.Find) != 0)
+                if ((state.Flags & (byte)PFAgentStatus.Find) != 0)
                 {
                     SortableList.AddNoResize(new SortableRequest
                     {
@@ -449,9 +465,9 @@ namespace PFStar
         }
 
         [BurstCompile]
-        private struct PrepareAndMarkJob : IJob
+        private struct PrepareAndMarkJob : IJobParallelFor
         {
-            public int MaxToProcess;
+            public int ActualCount;
             public float CurrentTime;
             public float3 GridOrigin;
 
@@ -463,61 +479,53 @@ namespace PFStar
             [ReadOnly] public ComponentLookup<NavigationTargetGridData> NavigationTargetLookup;
             [ReadOnly] public ComponentLookup<LocalTransform> TransformLookup;
 
-            public ComponentLookup<PFRequestAgent> PathRequestLookup;
-            public ComponentLookup<PFAgentState> AgentStateLookup;
+            [NativeDisableParallelForRestriction] public ComponentLookup<PFRequestAgent> PathRequestLookup;
+            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
 
-            public void Execute()
+            public void Execute(int i)
             {
-                int count = math.min(SortedList.Length, MaxToProcess);
-                int actualArraySize = ProcessingEntities.Length;
-
-                for (int i = 0; i < actualArraySize; i++)
+                if (i >= SortedList.Length)
                 {
-                    if (i < count)
-                    {
-                        Entity entity = SortedList[i].Entity;
+                    ProcessingEntities[i] = Entity.Null;
+                    return;
+                }
 
+                Entity entity = SortedList[i].Entity;
 
-                        if (!TransformLookup.HasComponent(entity))
-                        {
-                            ProcessingEntities[i] = Entity.Null;
-                            continue;
-                        }
+                if (!TransformLookup.HasComponent(entity))
+                {
+                    ProcessingEntities[i] = Entity.Null;
+                    return;
+                }
 
-                        var pos = TransformLookup[entity].Position;
+                var pos = TransformLookup[entity].Position;
+                var request = PathRequestLookup[entity];
 
-                        var request = PathRequestLookup[entity];
-                        if (NavigationTargetLookup.TryGetComponent(request.Focus, out var targetData))
-                        {
-                            request.Destination = targetData.CurrentCell;
-                            request.StartCoord = GridUtils.WorldToCellCoord(pos, GridOrigin);
+                if (NavigationTargetLookup.TryGetComponent(request.Focus, out var targetData))
+                {
+                    request.Destination = targetData.CurrentCell;
+                    request.StartCoord = GridUtils.WorldToCellCoord(pos, GridOrigin);
 
-                            var state = AgentStateLookup[entity];
-                            state.Flags |= (byte)PFAgentsStatus.Process;
-                            state.Flags &= (byte)~(PFAgentsStatus.Find | PFAgentsStatus.Idle |
-                                                   PFAgentsStatus.Significant | PFAgentsStatus.ForceUpdate);
+                    var state = AgentStateLookup[entity];
+                    state.Flags |= (byte)PFAgentStatus.Process;
+                    state.Flags &= (byte)~(PFAgentStatus.Find | PFAgentStatus.Idle |
+                                           PFAgentStatus.Significant | PFAgentStatus.ForceUpdate);
 
-                            float jitter = (entity.Index % 32) * 0.02f;
-                            request.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
+                    float jitter = (entity.Index % 32) * 0.02f;
+                    request.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
 
-                            PathRequestLookup[entity] = request;
-                            AgentStateLookup[entity] = state;
-                            PathArray[i] = request;
-                            ProcessingEntities[i] = entity;
-                        }
-                        else
-                        {
-                            var state = AgentStateLookup[entity];
-                            state.Flags = (byte)PFAgentsStatus.Idle;
-                            AgentStateLookup[entity] = state;
+                    PathRequestLookup[entity] = request;
+                    AgentStateLookup[entity] = state;
 
-                            ProcessingEntities[i] = Entity.Null;
-                        }
-                    }
-                    else
-                    {
-                        ProcessingEntities[i] = Entity.Null;
-                    }
+                    PathArray[i] = request;
+                    ProcessingEntities[i] = entity;
+                }
+                else
+                {
+                    var state = AgentStateLookup[entity];
+                    state.Flags = (byte)PFAgentStatus.Idle;
+                    AgentStateLookup[entity] = state;
+                    ProcessingEntities[i] = Entity.Null;
                 }
             }
         }
@@ -599,13 +607,13 @@ namespace PFStar
                 {
                     AStarCrowd.BuildPath(ref GridBlob.Value, ref box);
                     var state = AgentStateLookup[request.Owner];
-                    state.Flags = (byte)PFAgentsStatus.Process;
+                    state.Flags = (byte)(waypoints.Length > 0 ? PFAgentStatus.Process : PFAgentStatus.Idle);
                     AgentStateLookup[request.Owner] = state;
                 }
                 else
                 {
                     var state = AgentStateLookup[request.Owner];
-                    state.Flags = (byte)PFAgentsStatus.Idle;
+                    state.Flags = (byte)PFAgentStatus.Idle;
                     AgentStateLookup[request.Owner] = state;
                 }
             }

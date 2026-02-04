@@ -134,6 +134,7 @@ namespace PFStar
                 if (way.IsEmpty)
                 {
                     moveData.velocity = math.lerp(moveData.velocity, float3.zero, DeltaTime * 10f);
+                    agentState.Flags = (byte)PFAgentStatus.Idle;
                     return;
                 }
 
@@ -153,7 +154,7 @@ namespace PFStar
                     if (way.IsEmpty)
                     {
                         moveData.velocity = float3.zero;
-                        agentState.Flags = (byte)PFAgentsStatus.Idle; 
+                        agentState.Flags = (byte)PFAgentStatus.Idle; 
                         return;
                     }
                     toTarget = way[^1].point - currentPos;
