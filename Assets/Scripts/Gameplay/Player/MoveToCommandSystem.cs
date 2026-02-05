@@ -1,4 +1,5 @@
 using Input;
+using Map;
 using PFStar;
 using Unity.Burst;
 using Unity.Collections;
@@ -44,17 +45,17 @@ namespace Gameplay.Player
             ref var blob = ref _gridBlobLookup[gridEntity].Value.Value;
 
             if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out var playerEntity)) return;
-            
+
             var ecb = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>()
                 .CreateCommandBuffer(state.WorldUnmanaged);
-            
+
             foreach (var (command, markerEntity) in SystemAPI.Query<RefRO<MoveToCommand>>()
                          .WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)
                          .WithEntityAccess())
             {
-              
+
                 if (!_moveToCommandLookup.IsComponentEnabled(markerEntity)) continue;
-                
+
                 int2 clickCell = GridUtils.WorldToCellCoord(command.ValueRO.WorldPosition, blob.Origin);
 
                 bool isPathValid = !math.any(clickCell < 0) && !math.any(clickCell >= blob.Dimensions);
@@ -74,10 +75,10 @@ namespace Gameplay.Player
                         Destination = clickCell,
                         NextAllowedUpdateTime = 0
                     });
-                    
+
                     ecb.SetComponent(playerEntity, new PFAgentState { Flags = (byte)PFAgentStatus.Find });
                     ecb.SetComponent(playerEntity, new PFRequestMetadata { Priority = 255 });
-                    
+
                     float3 targetWorldPos = GridUtils.CellToWorldCoord(clickCell, blob.Origin);
                     ecb.SetComponent(markerEntity, LocalTransform.FromPosition(targetWorldPos));
                     ecb.SetComponentEnabled<TargetChangedTag>(markerEntity, true);

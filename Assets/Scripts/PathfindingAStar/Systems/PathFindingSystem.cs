@@ -1,4 +1,5 @@
 using Gameplay.Player;
+using Map;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;

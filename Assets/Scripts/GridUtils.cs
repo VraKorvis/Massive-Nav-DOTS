@@ -1,4 +1,5 @@
 using System.Runtime.CompilerServices;
+using Map;
 using PFStar;
 using Unity.Burst;
 using Unity.Entities;
@@ -135,7 +136,6 @@ public static class GridUtils
     {
         int2 coord = WorldToCellCoord(worldPos, grid.Origin);
     
-        // Проверка границ
         if (coord.x < 0 || coord.x >= grid.Dimensions.x || coord.y < 0 || coord.y >= grid.Dimensions.y)
             return true;
 

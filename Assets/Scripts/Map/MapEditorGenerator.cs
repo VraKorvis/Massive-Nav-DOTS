@@ -1,111 +1,300 @@
-using System;
 using UnityEngine;
 using Unity.Mathematics;
 using UnityEditor;
-using Object = UnityEngine.Object;
+using PFStar;
+using Unity.Entities;
 
 namespace Map
 {
+    public struct GridBlob
+    {
+        public int2 Dimensions;
+        public float3 Origin;
+        public float CellSize;
+
+        public BlobArray<CellType> CellsType;
+        public BlobArray<float> Weights;
+
+        public BlobArray<float> Heights;
+        public BlobArray<float3> Normals;
+    }
+
+    public struct GridBlobReference : IComponentData
+    {
+        public BlobAssetReference<GridBlob> Value;
+    }
+
     public class MapEditorGenerator : MonoBehaviour
     {
-        [Header("Assets")] public GameObject[] rockPrefabs;
+        public GridDataAsset dataAsset;
+
+        [Header("Assets")]
+        public GameObject[] rockPrefabs;
         public Transform parentFolder;
 
-        [Header("Settings")] public int2 mapSize = new int2(99, 99);
-        public float cellSize = 1.5f;
+        [Header("Generate Settings")]
+        public int2 mapSize = new int2(199, 199);
+        public float cellSize = 1f;
         public float noiseScale = 0.1f;
-        [Range(0, 1)] public float threshold = 0.5f;
+        [Range(0, 1)]
+        public float threshold = 0.5f;
+        [Range(0, 2)]
+        public float verticalOffset = 0.5f;
         public uint seed = 123;
 
-        [ContextMenu("Generate Map")]
-        public void Generate()
+        [Header("Grass Settings")]
+        public GameObject[] grassPrefabs;
+        public float grassNoiseScale = 0.2f;
+        [Range(0, 1)]
+        public float grassThreshold = 0.3f;
+        public bool alignGrassToNormal = false;
+
+        [Header("Physics & Baking")]
+        public LayerMask groundLayer;
+        public LayerMask obstacleLayer;
+        public float inflationRadius = 1.0f;
+        [Range(0f, 1f)]
+        public float walkableSlopeThreshold = 0.91f;
+        public bool showGrid;
+
+        [ContextMenu("Generate Rocks")]
+        public void GenerateRock()
         {
             Clear();
+            if (parentFolder == null || rockPrefabs.Length == 0) return;
 
-            if (parentFolder == null)
+            int layerIndex = 0;
+            int layerMaskValue = obstacleLayer.value;
+            for (int i = 0; i < 32; i++)
             {
-                Debug.LogError($"parentFolder not assigned");
-                return;
+                if ((layerMaskValue >> i & 1) == 1)
+                {
+                    layerIndex = i;
+                    break;
+                }
             }
-            
-            int obstacleLayer = LayerMask.NameToLayer("Env_static");
-            
+
             var rand = new Unity.Mathematics.Random(seed);
-            Vector3 startPos = transform.position -
-                               new Vector3(mapSize.x * 0.5f * cellSize, 0, mapSize.y * 0.5f * cellSize);
+
+            float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
+            Vector3 startPos = transform.position - (Vector3)offset;
 
             for (int x = 0; x < mapSize.x; x++)
             {
                 for (int y = 0; y < mapSize.y; y++)
                 {
                     float n = noise.cnoise(new float2(x, y) * noiseScale);
-
                     if (n > threshold)
                     {
                         GameObject prefab = rockPrefabs[rand.NextInt(0, rockPrefabs.Length)];
 
-                        Vector3 pos = startPos + new Vector3(x * cellSize, rand.NextFloat(0.5f, 1f), y * cellSize);
+                        Vector3 pos = startPos + new Vector3(x * cellSize, 0, y * cellSize);
+                        float3 rayStart = new float3(pos.x, 100f, pos.z);
 
-                        GameObject instance = Instantiate(prefab, pos, Quaternion.Euler(0, rand.NextFloat(0, 360), 0));
-                        instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
-                        instance.transform.SetParent(parentFolder);
+                        Quaternion randomRot = Quaternion.Euler(0, rand.NextFloat(0, 360), 0);
 
-                        instance.transform.localScale = Vector3.one * rand.NextFloat(0.7f, 1.3f);
-                        
-                        instance.layer = obstacleLayer;
-                        foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
+                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, groundLayer))
                         {
-                            child.gameObject.layer = obstacleLayer;
+                            Quaternion finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
+
+                            Vector3 finalPos = hit.point + (hit.normal * verticalOffset);
+
+                            GameObject instance = Instantiate(prefab, finalPos, finalRot);
+
+                            instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
+                            instance.transform.SetParent(parentFolder);
+                            instance.layer = layerIndex;
+
+                            foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
+                                child.gameObject.layer = layerIndex;
                         }
                     }
                 }
             }
+            Physics.SyncTransforms();
             Debug.Log($"Generated {parentFolder.childCount} rocks.");
         }
-        
-        [ContextMenu("Show All Rocks")]
-        public void ShowAll()
+
+        [ContextMenu("Generate Grass")]
+        public void GenerateGrass()
         {
-            foreach (Transform child in parentFolder)
+            if (parentFolder == null || grassPrefabs.Length == 0) return;
+
+            var rand = new Unity.Mathematics.Random(seed + 1);
+
+            float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
+            Vector3 startPos = transform.position - (Vector3)offset;
+
+            for (int x = 0; x < mapSize.x; x++)
             {
-                child.gameObject.hideFlags = HideFlags.None;
+                for (int y = 0; y < mapSize.y; y++)
+                {
+                    float n = noise.cnoise(new float2(x, y) * grassNoiseScale);
+
+                    if (n > grassThreshold)
+                    {
+                        GameObject prefab = grassPrefabs[rand.NextInt(0, grassPrefabs.Length)];
+                        Vector3 posXZ = startPos + new Vector3(x * cellSize, 0, y * cellSize);
+                        float3 rayStart = new float3(posXZ.x, 100f, posXZ.z);
+
+                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, groundLayer))
+                        {
+                            Vector3 finalPos = hit.point;
+
+                            Quaternion randomRot = Quaternion.Euler(0, rand.NextFloat(0, 360), 0);
+                            Quaternion finalRot;
+
+                            if (alignGrassToNormal)
+                            {
+                                finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
+                            }
+                            else
+                            {
+                                finalRot = randomRot;
+                            }
+
+                            GameObject instance = Instantiate(prefab, finalPos, finalRot);
+
+                            instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
+                            instance.transform.SetParent(parentFolder);
+
+                            instance.transform.localScale = Vector3.one * rand.NextFloat(0.8f, 1.2f);
+                        }
+                    }
+                }
             }
-            EditorApplication.DirtyHierarchyWindowSorting();
+            Debug.Log($"Generated {parentFolder.childCount} grass/objects.");
         }
-        
-        [ContextMenu("Hide All Rocks")]
-        public void HideAll()
+
+        [ContextMenu("Analyze Grid")]
+        public void AnalyzeGrid()
         {
-            foreach (Transform child in parentFolder)
+            Physics.SyncTransforms();
+
+            if (dataAsset == null) return;
+
+            int width = mapSize.x;
+            int height = mapSize.y;
+            int total = width * height;
+
+            float3 offset = new float3((width - 1) * cellSize * 0.5f, 0, (height - 1) * cellSize * 0.5f);
+            float3 cornerOrigin = (float3)transform.position - offset;
+
+            dataAsset.Dimensions = mapSize;
+            dataAsset.CellSize = cellSize;
+            dataAsset.Origin = cornerOrigin;
+            dataAsset.Heights = new float[total];
+            dataAsset.Normals = new float3[total];
+            dataAsset.CellsType = new CellType[total];
+            dataAsset.Weights = new float[total];
+
+            for (int i = 0; i < total; i++)
             {
-                child.gameObject.hideFlags = HideFlags.HideInHierarchy;
+                int2 coord = new int2(i % width, i / width);
+                float3 cellCenterGround = cornerOrigin + new float3(coord.x * cellSize, 0, coord.y * cellSize);
+
+                float3 planeCenter = cornerOrigin + new float3(coord.x * cellSize, 0, coord.y * cellSize);
+
+                float3 rayStart = cellCenterGround + new float3(0, 50f, 0);
+                bool hitSurface = Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 100f, groundLayer);
+                dataAsset.Heights[i] = hitSurface ? hit.point.y : cornerOrigin.y;
+                dataAsset.Normals[i] = hitSurface ? hit.normal : new float3(0, 1, 0);
+
+                float3 obstacleCheckCenter = new float3(planeCenter.x, dataAsset.Heights[i] + 1.0f, planeCenter.z);
+
+                float3 halfExtents = new float3(cellSize * 0.48f, 1.5f, cellSize * 0.48f);
+
+                bool isObstacle = Physics.CheckBox(obstacleCheckCenter, halfExtents, Quaternion.identity, obstacleLayer);
+
+                bool isEdge = (coord.x == 0 || coord.y == 0 || coord.x == width - 1 || coord.y == height - 1);
+                bool isTooSteep = hitSurface && (math.dot(dataAsset.Normals[i], new float3(0, 1, 0)) < walkableSlopeThreshold);
+
+                if (isObstacle || isEdge || isTooSteep)
+                {
+                    dataAsset.CellsType[i] = CellType.Wall;
+                    dataAsset.Weights[i] = float.PositiveInfinity;
+                }
+                else
+                {
+                    dataAsset.CellsType[i] = CellType.Ground;
+                    dataAsset.Weights[i] = 1.0f;
+                }
             }
-            EditorApplication.DirtyHierarchyWindowSorting();
+
+            if (inflationRadius > 0)
+            {
+                int range = (int)math.ceil(inflationRadius);
+                CellType[] tempTypes = (CellType[])dataAsset.CellsType.Clone();
+                for (int i = 0; i < total; i++)
+                {
+                    if (tempTypes[i] == CellType.Wall)
+                    {
+                        int2 wallCoord = new int2(i % width, i / width);
+                        for (int dy = -range; dy <= range; dy++)
+                        {
+                            for (int dx = -range; dx <= range; dx++)
+                            {
+                                int2 neighbor = wallCoord + new int2(dx, dy);
+                                if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height)
+                                {
+                                    int nIndex = neighbor.y * width + neighbor.x;
+                                    if (dataAsset.CellsType[nIndex] != CellType.Wall)
+                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], 10.0f);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            dataAsset.hasData = true;
+            EditorUtility.SetDirty(dataAsset);
+            AssetDatabase.SaveAssets();
+            Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
         }
 
         [ContextMenu("Clear Map")]
         public void Clear()
         {
             if (parentFolder == null) return;
-
-            for (int i = parentFolder.childCount - 1; i >= 0; i--)
-            {
-                DestroyImmediate(parentFolder.GetChild(i).gameObject);
-            }
-    
-            Undo.ClearAll(); 
-    
-            GC.Collect();
-            Resources.UnloadUnusedAssets();
-    
-            Debug.Log("Map cleared and memory flushed.");
+            for (int i = parentFolder.childCount - 1; i >= 0; i--) DestroyImmediate(parentFolder.GetChild(i).gameObject);
+            if (dataAsset != null) dataAsset.hasData = false;
+            Debug.Log("Map cleared.");
         }
-        
-        [ContextMenu("Force Clear Selection")]
-        public void ForceClear()
+
+        private void OnDrawGizmos()
         {
-            Selection.activeGameObject = null;
-            Selection.objects = Array.Empty<Object>();
+            if (dataAsset == null || !dataAsset.hasData) return;
+
+            Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.70f);
+            Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.25f);
+            Color groundWeights = new Color(1f, 0.8f, 0.1f, 0.25f);
+
+            for (int i = 0; i < dataAsset.CellsType.Length; i++)
+            {
+                int2 coord = new int2(i % dataAsset.Dimensions.x, i / dataAsset.Dimensions.x);
+                Vector3 pos = (Vector3)dataAsset.Origin + new Vector3(coord.x * dataAsset.CellSize, dataAsset.Heights[i] + 0.1f, coord.y * dataAsset.CellSize);
+
+                Vector3 normal = dataAsset.Normals[i];
+                Quaternion rotation = Quaternion.FromToRotation(Vector3.up, normal);
+
+                pos.y = dataAsset.Heights[i] + 0.2f;
+                Matrix4x4 cubeMatrix = Matrix4x4.TRS(pos, rotation, Vector3.one);
+                Gizmos.matrix = cubeMatrix;
+
+                if (dataAsset.CellsType[i] == CellType.Wall)
+                {
+                    Gizmos.color = wallColor;
+                    Gizmos.DrawCube(Vector3.zero, new Vector3(dataAsset.CellSize, 0.2f, dataAsset.CellSize));
+                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(dataAsset.CellSize, 0.05f, dataAsset.CellSize));
+                }
+                else if (showGrid)
+                {
+                    Gizmos.color = dataAsset.Weights[i] > 1.0f ? groundWeights : groundColor;
+                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(dataAsset.CellSize * 0.9f, 0.1f, dataAsset.CellSize * 0.9f));
+                }
+            }
+            Gizmos.matrix = Matrix4x4.identity;
         }
     }
 }
