@@ -47,7 +47,7 @@ namespace Map
                         Vector3 pos = startPos + new Vector3(x * cellSize, rand.NextFloat(0.5f, 1f), y * cellSize);
 
                         GameObject instance = Instantiate(prefab, pos, Quaternion.Euler(0, rand.NextFloat(0, 360), 0));
-
+                        instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
                         instance.transform.SetParent(parentFolder);
 
                         instance.transform.localScale = Vector3.one * rand.NextFloat(0.7f, 1.3f);
@@ -92,6 +92,13 @@ namespace Map
             {
                 DestroyImmediate(parentFolder.GetChild(i).gameObject);
             }
+    
+            Undo.ClearAll(); 
+    
+            GC.Collect();
+            Resources.UnloadUnusedAssets();
+    
+            Debug.Log("Map cleared and memory flushed.");
         }
         
         [ContextMenu("Force Clear Selection")]

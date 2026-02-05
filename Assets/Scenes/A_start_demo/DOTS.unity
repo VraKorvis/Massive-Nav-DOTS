@@ -520,6 +520,10 @@ PrefabInstance:
       value: 64
       objectReference: {fileID: 0}
     - target: {fileID: 7491682015478273790, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
+      propertyPath: threshold
+      value: 0.56
+      objectReference: {fileID: 0}
+    - target: {fileID: 7491682015478273790, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
       propertyPath: parentFolder
       value: 
       objectReference: {fileID: 2088310178}
