@@ -10,7 +10,6 @@ GameObject:
   m_Component:
   - component: {fileID: 291072621993677524}
   - component: {fileID: 1595218823368993272}
-  - component: {fileID: 8412497981323617802}
   m_Layer: 0
   m_Name: Mapgenerator
   m_TagString: Untagged
@@ -83,8 +82,16 @@ MonoBehaviour:
     y: 199
   cellSize: 1
   noiseScale: 0.1
-  threshold: 0.52
+  threshold: 0.601
+  verticalOffset: 0.5
   seed: 123
+  grassPrefabs:
+  - {fileID: 8574628723207334215, guid: eeeb337c67643fc4780edd18d903eca0, type: 3}
+  - {fileID: 3881550791890371892, guid: e8af8b43000608d43a0f2f15be139817, type: 3}
+  - {fileID: 177019065467276010, guid: ff8a36ccacfbbd44f8136851c1d35c98, type: 3}
+  grassNoiseScale: 37.61
+  grassThreshold: 0.037
+  alignGrassToNormal: 1
   groundLayer:
     serializedVersion: 2
     m_Bits: 128
@@ -92,18 +99,5 @@ MonoBehaviour:
     serializedVersion: 2
     m_Bits: 256
   inflationRadius: 1
-  walkableSlopeThreshold: 0.91
-  showGrid: 0
---- !u!114 &8412497981323617802
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2663274228693252731}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: c9adc8b09b2f4f3cadae9cac05ba4e9f, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: Assembly-CSharp::Map.GridDataHolder
-  dataAsset: {fileID: 11400000, guid: ea77cddf674be49289826848351364df, type: 2}
+  walkableSlopeThreshold: 0.86
+  showGrid: 1

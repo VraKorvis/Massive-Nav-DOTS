@@ -3,6 +3,7 @@ using Unity.Mathematics;
 using UnityEditor;
 using PFStar;
 using Unity.Entities;
+using UnityEditor.SceneManagement;
 
 namespace Map
 {
@@ -101,7 +102,7 @@ namespace Map
 
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
-                            instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
+                            // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
                             instance.transform.SetParent(parentFolder);
                             instance.layer = layerIndex;
 
@@ -155,9 +156,8 @@ namespace Map
 
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
-                            instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
+                            // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
                             instance.transform.SetParent(parentFolder);
-
                             instance.transform.localScale = Vector3.one * rand.NextFloat(0.8f, 1.2f);
                         }
                     }
@@ -250,6 +250,7 @@ namespace Map
             dataAsset.hasData = true;
             EditorUtility.SetDirty(dataAsset);
             AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
             Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
         }
 
@@ -257,8 +258,18 @@ namespace Map
         public void Clear()
         {
             if (parentFolder == null) return;
-            for (int i = parentFolder.childCount - 1; i >= 0; i--) DestroyImmediate(parentFolder.GetChild(i).gameObject);
-            if (dataAsset != null) dataAsset.hasData = false;
+            for (int i = parentFolder.childCount - 1; i >= 0; i--)
+            {
+                Undo.DestroyObjectImmediate(parentFolder.GetChild(i).gameObject);
+            }
+            if (dataAsset != null)
+            {
+                dataAsset.hasData = false;
+                EditorUtility.SetDirty(dataAsset);
+            }
+            EditorSceneManager.MarkSceneDirty(gameObject.scene);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
             Debug.Log("Map cleared.");
         }
 
