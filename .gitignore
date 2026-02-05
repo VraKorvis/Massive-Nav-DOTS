@@ -13,6 +13,10 @@
 *.log
 Assets/_Recovery/
 
+# DOTS / Entities specific
+/[Aa]ssets/GlobalEntitiesDependencies/
+/[Aa]ssets/SceneDependencyCache/
+
 # By default unity supports Blender asset imports, *.blend1 blender files do not need to be commited to version control.
 *.blend1
 *.blend1.meta
