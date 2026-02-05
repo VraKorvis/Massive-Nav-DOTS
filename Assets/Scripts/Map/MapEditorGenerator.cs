@@ -258,18 +258,18 @@ namespace Map
         public void Clear()
         {
             if (parentFolder == null) return;
+            Undo.RegisterCompleteObjectUndo(parentFolder, "Clear Map");
             for (int i = parentFolder.childCount - 1; i >= 0; i--)
             {
-                Undo.DestroyObjectImmediate(parentFolder.GetChild(i).gameObject);
+                DestroyImmediate(parentFolder.GetChild(i).gameObject);
             }
+            
             if (dataAsset != null)
             {
                 dataAsset.hasData = false;
                 EditorUtility.SetDirty(dataAsset);
             }
             EditorSceneManager.MarkSceneDirty(gameObject.scene);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
             Debug.Log("Map cleared.");
         }
 
