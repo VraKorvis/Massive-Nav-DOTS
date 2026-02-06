@@ -80,8 +80,8 @@ namespace PFStar
                     var renderer = wall.GetComponent<Renderer>();
                     Bounds b = renderer != null ? renderer.bounds : new Bounds(wall.transform.position, wallScale);
 
-                    int2 minCoord = GridUtils.WorldToCellCoord(b.min, cornerOrigin);
-                    int2 maxCoord = GridUtils.WorldToCellCoord(b.max, cornerOrigin);
+                    int2 minCoord = GridUtils.WorldToCellCoord(b.min, cornerOrigin, authoring.cellSize);
+                    int2 maxCoord = GridUtils.WorldToCellCoord(b.max, cornerOrigin, authoring.cellSize);
 
                     for (int y = math.max(0, minCoord.y); y <= math.min(authoring.dimensions.y - 1, maxCoord.y); y++)
                     {

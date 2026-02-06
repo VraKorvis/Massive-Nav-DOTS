@@ -55,16 +55,21 @@ public static class GridUtils
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static int2 WorldToCellCoord(float3 worldPos, float3 origin)
+    public static int2 WorldToCellCoord(float3 worldPos, float3 origin, float cellSize)
     {
-        float2 diff = worldPos.xz - origin.xz;
-        return (int2)math.round(diff);
+        float2 localPos = (worldPos.xz - origin.xz) / cellSize;
+        return (int2)math.floor(localPos);
+
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
-    public static float3 CellToWorldCoord(int2 cellCoord, float3 origin)
+    public static float3 CellToWorldCoord(int2 cellCoord, float3 origin, float cellSize)
     {
-        return new float3(cellCoord.x + origin.x, origin.y, cellCoord.y + origin.z);
+        return new float3(
+            (cellCoord.x * cellSize) + origin.x + (cellSize * 0.5f),
+            origin.y,
+            (cellCoord.y * cellSize) + origin.z + (cellSize * 0.5f)
+        );
     }
 
     /// <summary>
@@ -130,12 +135,12 @@ public static class GridUtils
         // Prime number XOR hashing is a standard high-performance technique for spatial grids
         return cellCoord.x * 73856093 ^ cellCoord.y * 19349663;
     }
-    
+
     [MethodImpl(MethodImplOptions.AggressiveInlining)]
     public static bool IsWallAtWorldPos(float3 worldPos, ref GridBlob grid)
     {
-        int2 coord = WorldToCellCoord(worldPos, grid.Origin);
-    
+        int2 coord = WorldToCellCoord(worldPos, grid.Origin, grid.CellSize);
+
         if (coord.x < 0 || coord.x >= grid.Dimensions.x || coord.y < 0 || coord.y >= grid.Dimensions.y)
             return true;
 

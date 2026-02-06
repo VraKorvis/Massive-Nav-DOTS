@@ -32,7 +32,7 @@ namespace PFStar
                      SystemAPI.Query<RefRO<LocalTransform>, RefRW<NavigationTargetGridData>>()
                          .WithEntityAccess())
             {
-                int2 newCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin);
+                int2 newCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin, grid.CellSize);
 
                 if (!newCoord.Equals(targetData.ValueRO.CurrentCell))
                 {

@@ -56,7 +56,7 @@ namespace Gameplay.Player
 
                 if (!_moveToCommandLookup.IsComponentEnabled(markerEntity)) continue;
 
-                int2 clickCell = GridUtils.WorldToCellCoord(command.ValueRO.WorldPosition, blob.Origin);
+                int2 clickCell = GridUtils.WorldToCellCoord(command.ValueRO.WorldPosition, blob.Origin, blob.CellSize);
 
                 bool isPathValid = !math.any(clickCell < 0) && !math.any(clickCell >= blob.Dimensions);
                 if (isPathValid && IsCellWall(clickCell, ref blob))
@@ -71,7 +71,7 @@ namespace Gameplay.Player
                     ecb.SetComponent(playerEntity, new PFRequestAgent
                     {
                         Focus = markerEntity,
-                        StartCoord = GridUtils.WorldToCellCoord(_transformLookup[playerEntity].Position, blob.Origin),
+                        StartCoord = GridUtils.WorldToCellCoord(_transformLookup[playerEntity].Position, blob.Origin, blob.CellSize),
                         Destination = clickCell,
                         NextAllowedUpdateTime = 0
                     });
@@ -79,7 +79,7 @@ namespace Gameplay.Player
                     ecb.SetComponent(playerEntity, new PFAgentState { Flags = (byte)PFAgentStatus.Find });
                     ecb.SetComponent(playerEntity, new PFRequestMetadata { Priority = 255 });
 
-                    float3 targetWorldPos = GridUtils.CellToWorldCoord(clickCell, blob.Origin);
+                    float3 targetWorldPos = GridUtils.CellToWorldCoord(clickCell, blob.Origin, blob.CellSize);
                     ecb.SetComponent(markerEntity, LocalTransform.FromPosition(targetWorldPos));
                     ecb.SetComponentEnabled<TargetChangedTag>(markerEntity, true);
                     ecb.SetComponent(markerEntity, new NavigationTargetGridData { CurrentCell = clickCell });
@@ -107,7 +107,7 @@ namespace Gameplay.Player
             float3 dir = math.normalize(from - to);
             for (float step = 0.2f; step < 5f; step += 0.4f)
             {
-                int2 testCell = GridUtils.WorldToCellCoord(to + dir * step, origin);
+                int2 testCell = GridUtils.WorldToCellCoord(to + dir * step, origin, blob.CellSize);
                 if (!IsCellWall(testCell, ref blob))
                 {
                     result = testCell;

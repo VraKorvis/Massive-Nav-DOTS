@@ -333,6 +333,7 @@ namespace PFStar
             {
                 ActualCount = sortableList.Length,
                 GridOrigin = gridBlobRef.Value.Origin,
+                Cellsize = gridBlobRef.Value.CellSize,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
 
                 SortedList = sortableList,
@@ -471,6 +472,7 @@ namespace PFStar
             public int ActualCount;
             public float CurrentTime;
             public float3 GridOrigin;
+            public float Cellsize;
 
             [ReadOnly] public NativeList<SortableRequest> SortedList;
 
@@ -505,7 +507,7 @@ namespace PFStar
                 if (NavigationTargetLookup.TryGetComponent(request.Focus, out var targetData))
                 {
                     request.Destination = targetData.CurrentCell;
-                    request.StartCoord = GridUtils.WorldToCellCoord(pos, GridOrigin);
+                    request.StartCoord = GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize);
 
                     var state = AgentStateLookup[entity];
                     state.Flags |= (byte)PFAgentStatus.Process;

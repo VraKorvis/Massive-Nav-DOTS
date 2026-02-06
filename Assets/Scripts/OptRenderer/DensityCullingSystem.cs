@@ -85,7 +85,7 @@ namespace OptRenderer
 
             void Execute(in LocalTransform transform)
             {
-                int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin);
+                int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
 
                 if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x &&
                     coord.y >= 0 && coord.y < GridSettings.Dimensions.y)
@@ -140,7 +140,7 @@ namespace OptRenderer
                 }
                 else
                 {
-                    int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin);
+                    int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
                     int density = 0;
                     if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x && coord.y >= 0 &&
                         coord.y < GridSettings.Dimensions.y)

@@ -186,7 +186,7 @@ namespace PFStar
                 }
 
                 float3 wallPush = float3.zero;
-                int2 myCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin);
+                int2 myCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin, grid.CellSize);
                 //TODO if (((nx | ny | (width - 1 - nx) | (height - 1 - ny)) & 0x80000000) == 0)
                 for (int x = -1; x <= 1; x++)
                 {
