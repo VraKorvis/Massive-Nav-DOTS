@@ -134,7 +134,7 @@ namespace PFStar
             {
                 if (way.IsEmpty)
                 {
-                    moveData.velocity = math.lerp(moveData.velocity, float3.zero, DeltaTime * 10f);
+                    moveData.Velocity = math.lerp(moveData.Velocity, float3.zero, DeltaTime * 10f);
                     agentState.Flags = (byte)PFAgentStatus.Idle;
                     return;
                 }
@@ -154,7 +154,7 @@ namespace PFStar
                     way.RemoveAt(way.Length - 1);
                     if (way.IsEmpty)
                     {
-                        moveData.velocity = float3.zero;
+                        moveData.Velocity = float3.zero;
                         agentState.Flags = (byte)PFAgentStatus.Idle; 
                         return;
                     }
@@ -214,11 +214,11 @@ namespace PFStar
                 }
 
                 float3 steering = dirToTarget + (separationForce * 0.15f) + (wallPush * 5.0f);
-                float3 targetVel = math.normalize(steering + 0.001f) * moveData.speed;
+                float3 targetVel = math.normalize(steering + 0.001f) * moveData.Speed;
 
-                moveData.velocity = math.lerp(moveData.velocity, targetVel, DeltaTime * 10.0f);
+                moveData.Velocity = math.lerp(moveData.Velocity, targetVel, DeltaTime * 10.0f);
 
-                float3 movement = moveData.velocity * DeltaTime;
+                float3 movement = moveData.Velocity * DeltaTime;
                 float3 nextPos = currentPos + movement;
 
                 if (GridUtils.IsWallAtWorldPos(nextPos, ref grid))
@@ -238,20 +238,20 @@ namespace PFStar
                         else
                         {
                             nextPos = currentPos;
-                            moveData.velocity = float3.zero;
+                            moveData.Velocity = float3.zero;
                         }
                     }
                     else
                     {
                         nextPos = currentPos;
-                        moveData.velocity = float3.zero;
+                        moveData.Velocity = float3.zero;
                     }
                 }
 
-                if (math.lengthsq(moveData.velocity) > 0.01f)
+                if (math.lengthsq(moveData.Velocity) > 0.01f)
                 {
                     transform.Rotation = math.slerp(transform.Rotation,
-                        quaternion.LookRotationSafe(moveData.velocity, math.up()), DeltaTime * 8.0f);
+                        quaternion.LookRotationSafe(moveData.Velocity, math.up()), DeltaTime * 8.0f);
                 }
 
                 transform.Position = nextPos;
