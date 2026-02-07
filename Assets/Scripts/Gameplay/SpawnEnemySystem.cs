@@ -17,6 +17,8 @@ namespace Gameplay
         private ComponentLookup<LocalTransform> _transformLookup;
         private ComponentLookup<MoveSettings> _moveSettingsLookup;
         private ComponentLookup<PFRequestMetadata> _metaLookup;
+        
+        private int _spawnedCount;
 
         public void OnCreate(ref SystemState state)
         {
@@ -27,41 +29,56 @@ namespace Gameplay
             _transformLookup = state.GetComponentLookup<LocalTransform>(false);
             _moveSettingsLookup = state.GetComponentLookup<MoveSettings>(false);
             _metaLookup = state.GetComponentLookup<PFRequestMetadata>(false);
+            state.RequireForUpdate<GridBlobReference>();
+
+            _spawnedCount = 0;
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!SystemAPI.TryGetSingleton<SpawnerConfig>(out var config)) return;
+
+            if (_spawnedCount >= config.Count)
+            {
+                state.Enabled = false; 
+                return;
+            }
+            
             if (!SystemAPI.TryGetSingletonEntity<GridTag>(out Entity gridEntity)) return;
-
-            var gridBlobRef = SystemAPI.GetComponent<GridBlobReference>(gridEntity).Value;
-            ref var gridBlob = ref gridBlobRef.Value;
-
-            var config = SystemAPI.GetSingleton<SpawnerConfig>();
-            var targetEntity = SystemAPI.GetSingletonEntity<PlayerTag>();
-
-            var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.TempJob);
-
+            if (!SystemAPI.TryGetSingleton<GridBlobReference>(out var gridRef)) return;
+            
+            var gridBlobRef = gridRef.Value;
+            
             _requestLookup.Update(ref state);
             _transformLookup.Update(ref state);
             _moveSettingsLookup.Update(ref state);
             _metaLookup.Update(ref state);
+            
+            
+            var targetEntity = SystemAPI.GetSingletonEntity<PlayerTag>();
 
+            int toSpawn = math.min(config.BatchSize, config.Count - _spawnedCount);
+            
+            var instances = state.EntityManager.Instantiate(config.Prefab, toSpawn, Allocator.TempJob);            
+            
             var setupJobHandle = new SetupSpawnedAgentsJob
             {
-                GridBlob = gridBlob,
+                GridBlobRef = gridBlobRef,
                 Entities = instances,
                 TargetEntity = targetEntity,
                 Config = config,
+                StartIndex = _spawnedCount,
                 CurrentTime = (float)SystemAPI.Time.ElapsedTime,
                 PfRequestLookup = _requestLookup,
                 TransformLookup = _transformLookup,
                 MoveSettingsLookup = _moveSettingsLookup,
                 MetaLookup = _metaLookup
-            }.Schedule(config.Count, 64, state.Dependency);
+            }.Schedule(toSpawn, 64, state.Dependency);
 
             state.Dependency = setupJobHandle;
 
+            _spawnedCount += toSpawn;
             instances.Dispose(state.Dependency);
 
             state.Enabled = false;
@@ -85,20 +102,23 @@ namespace Gameplay
         public ComponentLookup<MoveSettings> MoveSettingsLookup;
         [NativeDisableParallelForRestriction]
         public ComponentLookup<PFRequestMetadata> MetaLookup;
-        [ReadOnly]
-        public GridBlob GridBlob;
-
+        
+        [ReadOnly] public BlobAssetReference<GridBlob> GridBlobRef;
+        
+        public int StartIndex;
+        
         public void Execute(int index)
         {
+            ref var gridBlob = ref GridBlobRef.Value;
             var entity = Entities[index];
-            var random = new Random((uint)(index + 1) * 0x9E3779B9);
-
+            var random = Random.CreateFromIndex((uint)(StartIndex + index));
+            
             var offset = random.NextFloat3(
                 new float3(-Config.SpawnRadius, 0, -Config.SpawnRadius),
                 new float3(Config.SpawnRadius, 0, Config.SpawnRadius));
 
             var spawnPos = Config.SpawnPosition + offset;
-            float spawnHeight = GridUtils.GetHeightBilinear(ref GridBlob, spawnPos);
+            float spawnHeight = GridUtils.GetHeightBilinear(ref gridBlob, spawnPos);
             float3 finalSpawnPos = new float3(spawnPos.x, spawnHeight, spawnPos.z);
 
             TransformLookup[entity] = LocalTransform.FromPosition(finalSpawnPos);

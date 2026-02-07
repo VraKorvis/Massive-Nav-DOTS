@@ -9,13 +9,15 @@ namespace Gameplay
         public Entity Prefab;
         public int Count;
         public float SpawnRadius;
-        public float3 SpawnPosition; 
+        public float3 SpawnPosition;
+        public int BatchSize;
     }
     
     public class EnemySpawnerAuthoring : MonoBehaviour
     {
         public GameObject enemyPrefab;
-        public int count = 500;
+        public int count = 50000;
+        public int batchSize = 1000;
         public float spawnRadius = 10f;
 
         class Baker : Baker<EnemySpawnerAuthoring>
@@ -28,6 +30,7 @@ namespace Gameplay
                 {
                     Prefab = GetEntity(authoring.enemyPrefab, TransformUsageFlags.Dynamic),
                     Count = authoring.count,
+                    BatchSize = authoring.batchSize,
                     SpawnRadius = authoring.spawnRadius,
                     SpawnPosition = worldPosition
                 });
