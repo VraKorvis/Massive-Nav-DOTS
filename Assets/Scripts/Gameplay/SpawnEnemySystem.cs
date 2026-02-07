@@ -45,7 +45,6 @@ namespace Gameplay
                 return;
             }
             
-            if (!SystemAPI.TryGetSingletonEntity<GridTag>(out Entity gridEntity)) return;
             if (!SystemAPI.TryGetSingleton<GridBlobReference>(out var gridRef)) return;
             
             var gridBlobRef = gridRef.Value;
@@ -134,6 +133,7 @@ namespace Gameplay
             {
                 Speed = random.NextFloat(2f, 7f)
             };
+            
             MetaLookup[entity] = new PFRequestMetadata
             {
                 RequestTime = CurrentTime,

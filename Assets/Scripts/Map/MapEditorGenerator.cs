@@ -1,3 +1,4 @@
+using Core;
 using UnityEngine;
 using Unity.Mathematics;
 using UnityEditor;
@@ -18,6 +19,7 @@ namespace Map
 
         public BlobArray<float> Heights;
         public BlobArray<float3> Normals;
+        public BlobArray<float3> WallPushField;
     }
 
     public struct GridBlobReference : IComponentData
@@ -44,7 +46,8 @@ namespace Map
         public bool hasInflation = false;
         public float inflationMultyplier = 1f;
         public float inflationRadius = 1.0f;
-
+        public float wallAvoidanceRange = 1.2f;
+        
         public uint seed = 123;
 
         [Header("Grass Settings")]
@@ -184,12 +187,12 @@ namespace Map
                             // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
                             instance.transform.SetParent(parentGrass.transform);
                             instance.transform.localScale = Vector3.one * rand.NextFloat(0.8f, 1.2f);
-                            
+
                             instance.isStatic = true;
 
 #if UNITY_EDITOR
                             StaticEditorFlags targetFlags = StaticEditorFlags.OccludeeStatic | StaticEditorFlags.ContributeGI;
-    
+
                             GameObjectUtility.SetStaticEditorFlags(instance, targetFlags);
 
                             foreach (var child in instance.GetComponentsInChildren<Transform>(true))
@@ -197,7 +200,7 @@ namespace Map
                                 GameObjectUtility.SetStaticEditorFlags(child.gameObject, targetFlags);
                             }
 #endif
-                            
+
                         }
                     }
                 }
@@ -212,6 +215,8 @@ namespace Map
 
             if (dataAsset == null) return;
 
+            if (!GridValidator.Validate(dataAsset)) return;
+            
             int width = mapSize.x;
             int height = mapSize.y;
             int total = width * height;
@@ -226,7 +231,22 @@ namespace Map
             dataAsset.Normals = new float3[total];
             dataAsset.CellsType = new CellType[total];
             dataAsset.Weights = new float[total];
+            dataAsset.WallPush = new float3[total];
 
+            BakeTerrainParams(cornerOrigin, width, height, total);
+            
+            BakeWallPushField(width, height);
+            ApplyWallInflation(total, width, height);
+
+            dataAsset.hasData = true;
+            EditorUtility.SetDirty(dataAsset);
+            AssetDatabase.SaveAssets();
+            AssetDatabase.Refresh();
+            Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
+        }
+        
+        private void BakeTerrainParams(float3 cornerOrigin, int width, int height, int total)
+        {
             for (int i = 0; i < total; i++)
             {
                 int2 coord = new int2(i % width, i / width);
@@ -259,7 +279,55 @@ namespace Map
                     dataAsset.Weights[i] = 1.0f;
                 }
             }
+        }
 
+        private void BakeWallPushField(int width, int height)
+        {
+       
+            for (int y = 0; y < height; y++)
+            {
+                for (int x = 0; x < width; x++)
+                {
+                    int index = y * width + x;
+                    
+                    if (dataAsset.CellsType[index] == CellType.Wall) continue;
+
+                    float3 currentCellPos = dataAsset.Origin + new float3(x * dataAsset.CellSize, 0, y * dataAsset.CellSize);
+                    float3 totalPush = float3.zero;
+
+                    for (int nx = -1; nx <= 1; nx++)
+                    {
+                        for (int nz = -1; nz <= 1; nz++)
+                        {
+                            int neighborX = x + nx;
+                            int neighborZ = y + nz;
+
+                            if (neighborX >= 0 && neighborX < width && neighborZ >= 0 && neighborZ < height)
+                            {
+                                int nIndex = neighborZ * width + neighborX;
+                                if (dataAsset.CellsType[nIndex] == CellType.Wall)
+                                {
+                                    float3 wallPos = dataAsset.Origin + new float3(neighborX * dataAsset.CellSize, 0, neighborZ * dataAsset.CellSize);
+                                    float3 toCell = currentCellPos - wallPos;
+                                    toCell.y = 0;
+                                    float dist = math.length(toCell);
+
+                                    float wallPushRadius = dataAsset.CellSize * wallAvoidanceRange;
+                                    if (dist < wallPushRadius)
+                                    {
+                                        totalPush += (toCell / (dist + 0.001f)) * (wallPushRadius - dist);
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    dataAsset.WallPush[index] = totalPush;
+                }
+            }
+        }
+
+        private void ApplyWallInflation(int total, int width, int height)
+        {
             if (inflationRadius > 0 && hasInflation)
             {
                 int range = (int)math.ceil(inflationRadius);
@@ -285,12 +353,6 @@ namespace Map
                     }
                 }
             }
-
-            dataAsset.hasData = true;
-            EditorUtility.SetDirty(dataAsset);
-            AssetDatabase.SaveAssets();
-            AssetDatabase.Refresh();
-            Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
         }
 
         [ContextMenu("Clear Map")]

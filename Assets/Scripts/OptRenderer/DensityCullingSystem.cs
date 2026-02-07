@@ -87,8 +87,8 @@ namespace OptRenderer
             {
                 int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
 
-                if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x &&
-                    coord.y >= 0 && coord.y < GridSettings.Dimensions.y)
+                if (GridUtils.IsInBounds(coord, GridSettings.Dimensions))
+
                 {
                     int index = GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x);
 
@@ -142,8 +142,7 @@ namespace OptRenderer
                 {
                     int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
                     int density = 0;
-                    if (coord.x >= 0 && coord.x < GridSettings.Dimensions.x && coord.y >= 0 &&
-                        coord.y < GridSettings.Dimensions.y)
+                    if (GridUtils.IsInBounds(coord, GridSettings.Dimensions))
                     {
                         density = GridCount[GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x)];
                     }

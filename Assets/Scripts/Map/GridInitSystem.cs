@@ -25,19 +25,24 @@ namespace Map
         {
             var ecb = new EntityCommandBuffer(Allocator.Temp);
 
+            var oldGridQuery = state.EntityManager.CreateEntityQuery(typeof(GridBlobReference));
+            if (!oldGridQuery.IsEmptyIgnoreFilter)
+            {
+                var oldRefs = oldGridQuery.ToComponentDataArray<GridBlobReference>(Allocator.Temp);
+                for (int i = 0; i < oldRefs.Length; i++)
+                {
+                    var r = oldRefs[i];
+                    if (r.Value.IsCreated)
+                    {
+                        r.Value.Dispose();
+                       
+                    }
+                }
+                state.EntityManager.RemoveComponent<GridBlobReference>(oldGridQuery);
+            }
+            
             foreach (var (initTag, entity) in SystemAPI.Query<RefRO<GridInitTag>>().WithEntityAccess())
             {
-
-                if (!_gridQuery.IsEmptyIgnoreFilter)
-                {
-                    var existingRef = _gridQuery.GetSingleton<GridBlobReference>();
-                    if (existingRef.Value.IsCreated)
-                    {
-                        existingRef.Value.Dispose();
-                    }
-
-                    ecb.RemoveComponent<GridBlobReference>(_gridQuery.GetSingletonEntity());
-                }
 
                 var asset = initTag.ValueRO.GridDataAsset;
                 int total = asset.Value.Heights.Length;
@@ -53,11 +58,13 @@ namespace Map
                 var bN = builder.Allocate(ref root.Normals, total);
                 var bC = builder.Allocate(ref root.CellsType, total);
                 var bW = builder.Allocate(ref root.Weights, total);
+                var bP = builder.Allocate(ref root.WallPushField, total);
 
                 fixed (float* src = asset.Value.Heights) UnsafeUtility.MemCpy(bH.GetUnsafePtr(), src, total * sizeof(float));
                 fixed (float3* src = asset.Value.Normals) UnsafeUtility.MemCpy(bN.GetUnsafePtr(), src, total * sizeof(float3));
                 fixed (CellType* src = asset.Value.CellsType) UnsafeUtility.MemCpy(bC.GetUnsafePtr(), src, total * sizeof(CellType));
                 fixed (float* src = asset.Value.Weights) UnsafeUtility.MemCpy(bW.GetUnsafePtr(), src, total * sizeof(float));
+                fixed (float3* src = asset.Value.WallPush) UnsafeUtility.MemCpy(bP.GetUnsafePtr(), src, total * sizeof(float3));
 
                 var newBlobAsset = builder.CreateBlobAssetReference<GridBlob>(Allocator.Persistent);
 
@@ -72,6 +79,7 @@ namespace Map
 
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
+            state.Enabled = false;
         }
 
         public void OnDestroy(ref SystemState state)

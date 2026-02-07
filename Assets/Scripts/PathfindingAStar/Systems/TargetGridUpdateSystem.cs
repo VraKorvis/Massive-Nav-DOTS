@@ -32,18 +32,20 @@ namespace PFStar
                      SystemAPI.Query<RefRO<LocalTransform>, RefRW<NavigationTargetGridData>>()
                          .WithEntityAccess())
             {
-                int2 newCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin, grid.CellSize);
+                int2 rawCoord = GridUtils.WorldToCellCoord(transform.ValueRO.Position, grid.Origin, grid.CellSize);
 
-                if (!newCoord.Equals(targetData.ValueRO.CurrentCell))
+                int2 clampedCoord = math.clamp(rawCoord, 0, grid.Dimensions - 1);
+                
+                if (!clampedCoord.Equals(targetData.ValueRO.CurrentCell))
                 {
-                    targetData.ValueRW.CurrentCell = newCoord;
+                    targetData.ValueRW.CurrentCell = clampedCoord;
 
-                    int distance = math.abs(newCoord.x - targetData.ValueRO.LastSignificantCell.x) +
-                                   math.abs(newCoord.y - targetData.ValueRO.LastSignificantCell.y);
+                    int distance = math.abs(clampedCoord.x - targetData.ValueRO.LastSignificantCell.x) +
+                                   math.abs(clampedCoord.y - targetData.ValueRO.LastSignificantCell.y);
 
                     if (distance >= Threshold)
                     {
-                        targetData.ValueRW.LastSignificantCell = newCoord;
+                        targetData.ValueRW.LastSignificantCell = clampedCoord;
                         SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, true);
                         anyTargetMoved = true;
                     }

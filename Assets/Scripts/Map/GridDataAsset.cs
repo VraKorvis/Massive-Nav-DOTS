@@ -13,6 +13,7 @@ namespace Map
         
         public float[] Heights;
         public float3[] Normals;
+        public float3[] WallPush;
         public CellType[] CellsType;
         public float[] Weights;
         public bool hasData;

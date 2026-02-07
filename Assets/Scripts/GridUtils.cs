@@ -71,6 +71,12 @@ public static class GridUtils
             (cellCoord.y * cellSize) + origin.z + (cellSize * 0.5f)
         );
     }
+    
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static bool IsInBounds(int2 coord, int2 dims)
+    {
+        return (uint)coord.x < (uint)dims.x && (uint)coord.y < (uint)dims.y;
+    }
 
     /// <summary>
     /// Get world pos of cell
@@ -141,7 +147,7 @@ public static class GridUtils
     {
         int2 coord = WorldToCellCoord(worldPos, grid.Origin, grid.CellSize);
 
-        if (coord.x < 0 || coord.x >= grid.Dimensions.x || coord.y < 0 || coord.y >= grid.Dimensions.y)
+        if (!IsInBounds(coord, grid.Dimensions))
             return true;
 
         int index = CoordToIndex(coord, grid.Dimensions.x);

@@ -98,8 +98,8 @@ namespace PFStar
 
                     var newCost = initialCost + cellCost;
 
-                    bool isVisited = box.SearchVersions[toIndex] == box.SearchID;
-                    float oldCost = isVisited ? box.CostSoFar[toIndex] : float.MaxValue;
+                    bool isUpToDate = box.SearchVersions[toIndex] == box.SearchID;
+                    float oldCost = isUpToDate ? box.CostSoFar[toIndex] : float.MaxValue;
 
                     if (oldCost > 0 && oldCost <= newCost) continue;
 
@@ -271,8 +271,9 @@ namespace PFStar
             var batchSize = navSettings.InnerLoopBatchSize;
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             var gridBlobRef = _gridBlobLookup[gridEntity].Value;
-            int dimX = gridBlobRef.Value.Dimensions.x;
-            int dimY = gridBlobRef.Value.Dimensions.y;
+            var dimensions = gridBlobRef.Value.Dimensions;
+            int dimX = dimensions.x;
+            int dimY = dimensions.y;
             int maxPerFrame = navSettings.MaxPerFrame;
 
             int gridSize = dimX * dimY;
@@ -283,6 +284,7 @@ namespace PFStar
             bool limitIncreased = maxPerFrame > currentPhysicalLimit;
 
             state.Dependency.Complete();
+            
             if (gridSize > 0 && (!_costSoFar.IsCreated || sizeChanged || limitIncreased))
             {
                 if (_costSoFar.IsCreated) DisposeAll();
@@ -326,8 +328,7 @@ namespace PFStar
                         Destination = playerRequest.Destination,
                         Waypoints = _waypointLookup[playerEntity],
                         GridBlob = gridBlobRef,
-                        DimX = dimX,
-                        DimY = dimY,
+                        Dimensions = dimensions,
                         GridSize = gridSize,
                         Neighbours = _neighbours,
                         AgentStateLookup = _agentStateLookup,
@@ -360,9 +361,9 @@ namespace PFStar
 
             var prepareHandle = new PrepareAndMarkJob
             {
-                ActualCount = sortableList.Length,
                 GridOrigin = gridBlobRef.Value.Origin,
                 Cellsize = gridBlobRef.Value.CellSize,
+                Dimensions  = gridBlobRef.Value.Dimensions,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
 
                 SortedList = sortableList,
@@ -379,8 +380,7 @@ namespace PFStar
             {
                 Offset = VipOffset,
                 GridBlob = gridBlobRef,
-                DimX = dimX,
-                DimY = dimY,
+                Dimensions = dimensions,
                 CurrentFrame = Time.frameCount,
                 GreedyCoef = navSettings.GreedyCoef,
                 IterationLimit = navSettings.IterationLimit,
@@ -413,8 +413,8 @@ namespace PFStar
 
             public BlobAssetReference<GridBlob> GridBlob;
 
-            public int DimX;
-            public int DimY;
+            public int2 Dimensions;
+
             public float GreedyCoef;
 
             public NativeArray<float> CostSoFar;
@@ -436,16 +436,14 @@ namespace PFStar
             public void Execute()
             {
                 OpenSet.Clear();
-                UnsafeUtility.MemClear(CostSoFar.GetUnsafePtr(), GridSize * sizeof(float));
-                UnsafeUtility.MemClear(SearchVersions.GetUnsafePtr(), GridSize * sizeof(int));
 
                 Waypoints.Clear();
 
                 var box = new BoxData
                 {
                     GridBlob = GridBlob,
-                    DimX = DimX,
-                    DimY = DimY,
+                    DimX = Dimensions.x,
+                    DimY = Dimensions.y,
                     GreedyCoef = GreedyCoef,
                     IterationLimit = VipIterationLimit,
                     StartPos = StartPos,
@@ -500,11 +498,11 @@ namespace PFStar
         [BurstCompile]
         private struct PrepareAndMarkJob : IJobParallelFor
         {
-            public int ActualCount;
             public float CurrentTime;
             public float3 GridOrigin;
             public float Cellsize;
-
+            public int2 Dimensions;
+            
             [ReadOnly]
             public NativeList<SortableRequest> SortedList;
 
@@ -545,8 +543,13 @@ namespace PFStar
                 if (NavigationTargetLookup.TryGetComponent(request.Focus, out var targetData))
                 {
                     request.Destination = targetData.CurrentCell;
-                    request.StartCoord = GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize);
 
+                    request.StartCoord = math.clamp(
+                        GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize), 
+                        0, 
+                        Dimensions - 1
+                    );
+                    
                     var state = AgentStateLookup[entity];
                     state.Flags |= (byte)PFAgentStatus.Process;
                     state.Flags &= (byte)~(PFAgentStatus.Find | PFAgentStatus.Idle |
@@ -575,8 +578,8 @@ namespace PFStar
         private unsafe struct FindPathAStarJob : IJobParallelFor
         {
             public int Offset;
-            public int DimX;
-            public int DimY;
+            public int2 Dimensions;
+            
             public int GridStride;
 
             public float GreedyCoef;
@@ -622,9 +625,7 @@ namespace PFStar
                 var openSetSlice = OpenSet.Slice(actualIndex * GridStride, GridStride);
 
                 var request = PathList[index];
-
-                UnsafeUtility.MemClear(costSoFarSlice.GetUnsafePtr(), costSoFarSlice.Length * sizeof(float));
-                UnsafeUtility.MemClear(cameFromSlice.GetUnsafePtr(), cameFromSlice.Length * sizeof(int2));
+                
                 openSetSlice.Clear();
 
                 if (request.Owner == Entity.Null) return;
@@ -645,8 +646,8 @@ namespace PFStar
                     IterationLimit = IterationLimit,
                     GridBlob = GridBlob,
                     Waypoints = waypoints,
-                    DimX = DimX,
-                    DimY = DimY,
+                    DimX = Dimensions.x,
+                    DimY = Dimensions.y,
                     StartPos = request.StartCoord,
                     Destination = request.Destination,
                     CostSoFar = costSoFarSlice,

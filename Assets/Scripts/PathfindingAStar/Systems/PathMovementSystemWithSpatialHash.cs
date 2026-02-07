@@ -5,6 +5,7 @@ using Unity.Collections;
 using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
+using Unity.Profiling;
 using Unity.Transforms;
 
 namespace PFStar
@@ -14,6 +15,10 @@ namespace PFStar
     [BurstCompile]
     public partial struct PathMovementSystemWithSpatialHash : ISystem
     {
+#if UNITY_EDITOR
+        private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new("[PF] Player.Pathfinding.Scheduling");
+#endif
+        
         private EntityQuery _agentQuery;
         private NativeParallelMultiHashMap<int, int> _spatialMap;
         private ComponentLookup<LocalTransform> _transformLookup;
@@ -42,7 +47,6 @@ namespace PFStar
             _gridBlobLookup.Update(ref state);
 
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridSettings = SystemAPI.GetComponent<GridSettings>(gridEntity);
             var gridBlobRef = _gridBlobLookup[gridEntity].Value;
 
             int count = _agentQuery.CalculateEntityCount();
@@ -56,7 +60,6 @@ namespace PFStar
             _spatialMap.Clear();
 
             var allPositions = new NativeArray<float3>(count, Allocator.TempJob);
-            // var allEntities = _agentQuery.ToEntityArray(Allocator.TempJob);
 
             var copyJobHandle = new CopyPositionsJob
             {
@@ -73,7 +76,6 @@ namespace PFStar
             {
                 GridBlob = gridBlobRef,
                 SpatialMap = _spatialMap,
-                // AllEntities = allEntities,
                 AllPositions = allPositions,
                 AllTransforms = _transformLookup,
                 DeltaTime = SystemAPI.Time.DeltaTime,
@@ -84,7 +86,6 @@ namespace PFStar
 
             state.Dependency = JobHandle.CombineDependencies(
                 moveJobHandle,
-                // allEntities.Dispose(moveJobHandle),
                 allPositions.Dispose(moveJobHandle)
             );
         }
@@ -185,33 +186,10 @@ namespace PFStar
                     } while (neighborsCount < 6 && SpatialMap.TryGetNextValue(out neighborIndex, ref it));
                 }
 
-                float3 wallPush = float3.zero;
-                int2 myCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin, grid.CellSize);
-                //TODO if (((nx | ny | (width - 1 - nx) | (height - 1 - ny)) & 0x80000000) == 0)
-                for (int x = -1; x <= 1; x++)
-                {
-                    for (int z = -1; z <= 1; z++)
-                    {
-                        int2 nCoord = myCoord + new int2(x, z);
-                        if (nCoord.x >= 0 && nCoord.x < grid.Dimensions.x && nCoord.y >= 0 &&
-                            nCoord.y < grid.Dimensions.y)
-                        {
-                            if (grid.CellsType[nCoord.y * grid.Dimensions.x + nCoord.x] == CellType.Wall)
-                            {
-                                float3 cellPos = grid.Origin +
-                                                 new float3(nCoord.x * grid.CellSize, 0, nCoord.y * grid.CellSize);
-                                float3 toAgent = currentPos - cellPos;
-                                toAgent.y = 0;
-                                float dist = math.length(toAgent);
-
-                                if (dist < grid.CellSize * 1.2f)
-                                {
-                                    wallPush += (toAgent / (dist + 0.001f)) * (grid.CellSize * 1.2f - dist);
-                                }
-                            }
-                        }
-                    }
-                }
+                int2 cellCoord = GridUtils.WorldToCellCoord(currentPos, grid.Origin, grid.CellSize);
+                cellCoord = math.clamp(cellCoord, 0, grid.Dimensions - 1);
+                var cellIndex = GridUtils.CoordToIndex(cellCoord, grid.Dimensions.x);
+                float3 wallPush = grid.WallPushField[cellIndex];
 
                 float3 steering = dirToTarget + (separationForce * 0.15f) + (wallPush * 5.0f);
                 float3 targetVel = math.normalize(steering + 0.001f) * moveData.Speed;
