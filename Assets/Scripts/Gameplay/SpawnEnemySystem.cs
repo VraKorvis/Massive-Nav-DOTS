@@ -1,4 +1,5 @@
 using Gameplay.Player;
+using Map;
 using PFStar;
 using Unity.Burst;
 using Unity.Collections;
@@ -16,12 +17,12 @@ namespace Gameplay
         private ComponentLookup<LocalTransform> _transformLookup;
         private ComponentLookup<MoveSettings> _moveSettingsLookup;
         private ComponentLookup<PFRequestMetadata> _metaLookup;
-        
+
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<PlayerTag>();
             state.RequireForUpdate<SpawnerConfig>();
-            
+
             _requestLookup = state.GetComponentLookup<PFRequestAgent>(false);
             _transformLookup = state.GetComponentLookup<LocalTransform>(false);
             _moveSettingsLookup = state.GetComponentLookup<MoveSettings>(false);
@@ -31,18 +32,24 @@ namespace Gameplay
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!SystemAPI.TryGetSingletonEntity<GridTag>(out Entity gridEntity)) return;
+
+            var gridBlobRef = SystemAPI.GetComponent<GridBlobReference>(gridEntity).Value;
+            ref var gridBlob = ref gridBlobRef.Value;
+
             var config = SystemAPI.GetSingleton<SpawnerConfig>();
             var targetEntity = SystemAPI.GetSingletonEntity<PlayerTag>();
-    
+
             var instances = state.EntityManager.Instantiate(config.Prefab, config.Count, Allocator.TempJob);
-            
+
             _requestLookup.Update(ref state);
             _transformLookup.Update(ref state);
             _moveSettingsLookup.Update(ref state);
             _metaLookup.Update(ref state);
 
-            var setupJob = new SetupSpawnedAgentsJob
+            var setupJobHandle = new SetupSpawnedAgentsJob
             {
+                GridBlob = gridBlob,
                 Entities = instances,
                 TargetEntity = targetEntity,
                 Config = config,
@@ -51,12 +58,12 @@ namespace Gameplay
                 TransformLookup = _transformLookup,
                 MoveSettingsLookup = _moveSettingsLookup,
                 MetaLookup = _metaLookup
-            };
+            }.Schedule(config.Count, 64, state.Dependency);
 
-            state.Dependency = setupJob.Schedule(config.Count, 64, state.Dependency);
-    
+            state.Dependency = setupJobHandle;
+
             instances.Dispose(state.Dependency);
-    
+
             state.Enabled = false;
         }
     }
@@ -64,26 +71,37 @@ namespace Gameplay
     [BurstCompile]
     public struct SetupSpawnedAgentsJob : IJobParallelFor
     {
-        [ReadOnly] public NativeArray<Entity> Entities;
+        [ReadOnly]
+        public NativeArray<Entity> Entities;
         public Entity TargetEntity;
         public SpawnerConfig Config;
         public float CurrentTime;
 
-        [NativeDisableParallelForRestriction] public ComponentLookup<PFRequestAgent> PfRequestLookup;
-        [NativeDisableParallelForRestriction] public ComponentLookup<LocalTransform> TransformLookup;
-        [NativeDisableParallelForRestriction] public ComponentLookup<MoveSettings> MoveSettingsLookup;
-        [NativeDisableParallelForRestriction] public ComponentLookup<PFRequestMetadata> MetaLookup;
+        [NativeDisableParallelForRestriction]
+        public ComponentLookup<PFRequestAgent> PfRequestLookup;
+        [NativeDisableParallelForRestriction]
+        public ComponentLookup<LocalTransform> TransformLookup;
+        [NativeDisableParallelForRestriction]
+        public ComponentLookup<MoveSettings> MoveSettingsLookup;
+        [NativeDisableParallelForRestriction]
+        public ComponentLookup<PFRequestMetadata> MetaLookup;
+        [ReadOnly]
+        public GridBlob GridBlob;
 
         public void Execute(int index)
         {
             var entity = Entities[index];
-            var random = new Random((uint)(index + 1) * 0x9E3779B9); 
+            var random = new Random((uint)(index + 1) * 0x9E3779B9);
 
             var offset = random.NextFloat3(
                 new float3(-Config.SpawnRadius, 0, -Config.SpawnRadius),
                 new float3(Config.SpawnRadius, 0, Config.SpawnRadius));
 
-            TransformLookup[entity] = LocalTransform.FromPosition(Config.SpawnPosition + offset);
+            var spawnPos = Config.SpawnPosition + offset;
+            float spawnHeight = GridUtils.GetHeightBilinear(ref GridBlob, spawnPos);
+            float3 finalSpawnPos = new float3(spawnPos.x, spawnHeight, spawnPos.z);
+
+            TransformLookup[entity] = LocalTransform.FromPosition(finalSpawnPos);
 
             PfRequestLookup[entity] = new PFRequestAgent
             {
@@ -93,8 +111,15 @@ namespace Gameplay
                 Destination = int2.zero
             };
 
-            MoveSettingsLookup[entity] = new MoveSettings { speed = random.NextFloat(2f, 7f) };
-            MetaLookup[entity] = new PFRequestMetadata { RequestTime = CurrentTime, Priority = 0 };
+            MoveSettingsLookup[entity] = new MoveSettings
+            {
+                speed = random.NextFloat(2f, 7f)
+            };
+            MetaLookup[entity] = new PFRequestMetadata
+            {
+                RequestTime = CurrentTime,
+                Priority = 0
+            };
         }
     }
 }

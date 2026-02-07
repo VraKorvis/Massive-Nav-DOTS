@@ -65,9 +65,31 @@ namespace PFStar
 
                 for (int i = 0; i < neighbours.Length; i++)
                 {
-                    var nextPosition = current.Position + neighbours[i];
+                    var step = neighbours[i];
+
+                    var nextPosition = current.Position + step;
                     if (nextPosition.x < 0 || nextPosition.x >= box.DimX ||
                         nextPosition.y < 0 || nextPosition.y >= box.DimY) continue;
+
+                    if (step.x != 0 && step.y != 0)
+                    {
+                        int2 side1 = new int2(current.Position.x + step.x, current.Position.y);
+                        int2 side2 = new int2(current.Position.x, current.Position.y + step.y);
+    
+                        int idx1 = GridUtils.CoordToIndex(side1, box.DimX);
+                        int idx2 = GridUtils.CoordToIndex(side2, box.DimX);
+
+                        bool wall1 = grid.CellsType[idx1] == CellType.Wall;
+                        bool wall2 = grid.CellsType[idx2] == CellType.Wall;
+
+                        bool inf1 = float.IsInfinity(grid.Weights[idx1]);
+                        bool inf2 = float.IsInfinity(grid.Weights[idx2]);
+
+                        if (wall1 || wall2 || inf1 || inf2)
+                        {
+                            continue;
+                        }
+                    }
 
                     var toIndex = GridUtils.CoordToIndex(nextPosition, box.DimX);
                     var cellCost = GetCost(toIndex, i, ref grid);
@@ -98,13 +120,19 @@ namespace PFStar
         public static void BuildPath(ref GridBlob grid, ref BoxData box)
         {
             var ind = GridUtils.CoordToIndex(box.Destination, box.DimX);
-            box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(ref grid, ind) });
+            box.Waypoints.Add(new Waypoint
+            {
+                point = GridUtils.CoordToWorld(ref grid, ind)
+            });
 
             var currCoord = box.CameFrom[ind];
             while (!currCoord.Equals(box.StartPos))
             {
                 int cInd = GridUtils.CoordToIndex(currCoord, box.DimX);
-                box.Waypoints.Add(new Waypoint { point = GridUtils.CoordToWorld(ref grid, cInd) });
+                box.Waypoints.Add(new Waypoint
+                {
+                    point = GridUtils.CoordToWorld(ref grid, cInd)
+                });
                 currCoord = box.CameFrom[cInd];
             }
         }
@@ -126,7 +154,8 @@ namespace PFStar
 
     public struct BoxData
     {
-        [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
+        [ReadOnly]
+        public BlobAssetReference<GridBlob> GridBlob;
         public DynamicBuffer<Waypoint> Waypoints;
         public int DimX;
         public int DimY;
@@ -271,7 +300,7 @@ namespace PFStar
 #if UNITY_EDITOR
             var markerScope = k_ProfilePlayerPathLogic.Auto();
 #endif
-            
+
             if (!_playerQuery.IsEmpty)
             {
                 var playerEntity = _playerQuery.GetSingletonEntity();
@@ -307,11 +336,11 @@ namespace PFStar
                     state.Dependency = playerJob.Schedule(state.Dependency);
                 }
             }
-            
+
 #if UNITY_EDITOR
             markerScope.Dispose();
 #endif
-            
+
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
 
@@ -400,7 +429,8 @@ namespace PFStar
             public ComponentLookup<PFAgentState> AgentStateLookup;
 
             public Entity PlayerEntity;
-            [ReadOnly] public NativeArray<int2> Neighbours;
+            [ReadOnly]
+            public NativeArray<int2> Neighbours;
             public int GridSize;
 
             public void Execute()
@@ -449,7 +479,8 @@ namespace PFStar
         [BurstCompile]
         public partial struct CollectRequestsJob : IJobEntity
         {
-            [WriteOnly] [NativeDisableContainerSafetyRestriction]
+            [WriteOnly]
+            [NativeDisableContainerSafetyRestriction]
             public NativeList<SortableRequest>.ParallelWriter SortableList;
 
             void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
@@ -474,16 +505,23 @@ namespace PFStar
             public float3 GridOrigin;
             public float Cellsize;
 
-            [ReadOnly] public NativeList<SortableRequest> SortedList;
+            [ReadOnly]
+            public NativeList<SortableRequest> SortedList;
 
-            [WriteOnly] public NativeArray<Entity> ProcessingEntities;
-            [WriteOnly] public NativeArray<PFRequestAgent> PathArray;
+            [WriteOnly]
+            public NativeArray<Entity> ProcessingEntities;
+            [WriteOnly]
+            public NativeArray<PFRequestAgent> PathArray;
 
-            [ReadOnly] public ComponentLookup<NavigationTargetGridData> NavigationTargetLookup;
-            [ReadOnly] public ComponentLookup<LocalTransform> TransformLookup;
+            [ReadOnly]
+            public ComponentLookup<NavigationTargetGridData> NavigationTargetLookup;
+            [ReadOnly]
+            public ComponentLookup<LocalTransform> TransformLookup;
 
-            [NativeDisableParallelForRestriction] public ComponentLookup<PFRequestAgent> PathRequestLookup;
-            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
+            [NativeDisableParallelForRestriction]
+            public ComponentLookup<PFRequestAgent> PathRequestLookup;
+            [NativeDisableParallelForRestriction]
+            public ComponentLookup<PFAgentState> AgentStateLookup;
 
             public void Execute(int i)
             {
@@ -512,7 +550,7 @@ namespace PFStar
                     var state = AgentStateLookup[entity];
                     state.Flags |= (byte)PFAgentStatus.Process;
                     state.Flags &= (byte)~(PFAgentStatus.Find | PFAgentStatus.Idle |
-                                           PFAgentStatus.Significant | PFAgentStatus.ForceUpdate);
+                        PFAgentStatus.Significant | PFAgentStatus.ForceUpdate);
 
                     float jitter = (entity.Index % 32) * 0.02f;
                     request.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
@@ -546,20 +584,31 @@ namespace PFStar
 
             public int CurrentFrame;
 
-            [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
-            [NativeDisableParallelForRestriction] public BufferLookup<Waypoint> WaypointsLookup;
+            [ReadOnly]
+            public BlobAssetReference<GridBlob> GridBlob;
+            [NativeDisableParallelForRestriction]
+            public BufferLookup<Waypoint> WaypointsLookup;
 
-            [ReadOnly] public NativeArray<Entity> ProcessingEntities;
-            [ReadOnly] public NativeArray<PFRequestAgent> PathList;
-            [ReadOnly] public ComponentLookup<PFRequestAgent> ActualPathLookup;
-            [NativeDisableParallelForRestriction] public ComponentLookup<PFAgentState> AgentStateLookup;
+            [ReadOnly]
+            public NativeArray<Entity> ProcessingEntities;
+            [ReadOnly]
+            public NativeArray<PFRequestAgent> PathList;
+            [ReadOnly]
+            public ComponentLookup<PFRequestAgent> ActualPathLookup;
+            [NativeDisableParallelForRestriction]
+            public ComponentLookup<PFAgentState> AgentStateLookup;
 
-            [NativeDisableParallelForRestriction] public NativeArray<int> SearchVersions;
-            [NativeDisableParallelForRestriction] public NativeArray<float> CostSoFar;
-            [NativeDisableParallelForRestriction] public NativeArray<int2> CameFrom;
-            [NativeDisableParallelForRestriction] public NativeMinHeap OpenSet;
+            [NativeDisableParallelForRestriction]
+            public NativeArray<int> SearchVersions;
+            [NativeDisableParallelForRestriction]
+            public NativeArray<float> CostSoFar;
+            [NativeDisableParallelForRestriction]
+            public NativeArray<int2> CameFrom;
+            [NativeDisableParallelForRestriction]
+            public NativeMinHeap OpenSet;
 
-            [ReadOnly] public NativeArray<int2> Neighbours;
+            [ReadOnly]
+            public NativeArray<int2> Neighbours;
 
             public void Execute(int index)
             {
@@ -596,7 +645,8 @@ namespace PFStar
                     IterationLimit = IterationLimit,
                     GridBlob = GridBlob,
                     Waypoints = waypoints,
-                    DimX = DimX, DimY = DimY,
+                    DimX = DimX,
+                    DimY = DimY,
                     StartPos = request.StartCoord,
                     Destination = request.Destination,
                     CostSoFar = costSoFarSlice,

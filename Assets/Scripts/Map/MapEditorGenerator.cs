@@ -41,6 +41,10 @@ namespace Map
         public float threshold = 0.5f;
         [Range(0, 2)]
         public float verticalOffset = 0.5f;
+        public bool hasInflation = false;
+        public float inflationMultyplier = 1f;
+        public float inflationRadius = 1.0f;
+
         public uint seed = 123;
 
         [Header("Grass Settings")]
@@ -53,7 +57,7 @@ namespace Map
         [Header("Physics & Baking")]
         public LayerMask groundLayer;
         public LayerMask obstacleLayer;
-        public float inflationRadius = 1.0f;
+
         [Range(0f, 1f)]
         public float walkableSlopeThreshold = 0.91f;
         public bool showGrid;
@@ -80,6 +84,7 @@ namespace Map
             float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
             Vector3 startPos = transform.position - (Vector3)offset;
 
+            GameObject parentRock = Instantiate(new GameObject("Rocks"), parentFolder);
             for (int x = 0; x < mapSize.x; x++)
             {
                 for (int y = 0; y < mapSize.y; y++)
@@ -103,11 +108,29 @@ namespace Map
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
                             // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
-                            instance.transform.SetParent(parentFolder);
+                            instance.transform.SetParent(parentRock.transform);
                             instance.layer = layerIndex;
 
                             foreach (Transform child in instance.GetComponentsInChildren<Transform>(true))
                                 child.gameObject.layer = layerIndex;
+
+                            instance.isStatic = true;
+
+#if UNITY_EDITOR
+                            var flags = GameObjectUtility.GetStaticEditorFlags(instance);
+
+                            flags &= ~StaticEditorFlags.BatchingStatic;
+
+                            GameObjectUtility.SetStaticEditorFlags(instance, flags);
+
+                            foreach (var child in instance.GetComponentsInChildren<Transform>(true))
+                            {
+                                child.gameObject.isStatic = true;
+                                var childFlags = GameObjectUtility.GetStaticEditorFlags(child.gameObject);
+                                childFlags &= ~StaticEditorFlags.BatchingStatic;
+                                GameObjectUtility.SetStaticEditorFlags(child.gameObject, childFlags);
+                            }
+#endif
                         }
                     }
                 }
@@ -125,6 +148,8 @@ namespace Map
 
             float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
             Vector3 startPos = transform.position - (Vector3)offset;
+
+            GameObject parentGrass = Instantiate(new GameObject("Grass"), parentFolder);
 
             for (int x = 0; x < mapSize.x; x++)
             {
@@ -157,8 +182,22 @@ namespace Map
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
                             // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
-                            instance.transform.SetParent(parentFolder);
+                            instance.transform.SetParent(parentGrass.transform);
                             instance.transform.localScale = Vector3.one * rand.NextFloat(0.8f, 1.2f);
+                            
+                            instance.isStatic = true;
+
+#if UNITY_EDITOR
+                            StaticEditorFlags targetFlags = StaticEditorFlags.OccludeeStatic | StaticEditorFlags.ContributeGI;
+    
+                            GameObjectUtility.SetStaticEditorFlags(instance, targetFlags);
+
+                            foreach (var child in instance.GetComponentsInChildren<Transform>(true))
+                            {
+                                GameObjectUtility.SetStaticEditorFlags(child.gameObject, targetFlags);
+                            }
+#endif
+                            
                         }
                     }
                 }
@@ -221,7 +260,7 @@ namespace Map
                 }
             }
 
-            if (inflationRadius > 0)
+            if (inflationRadius > 0 && hasInflation)
             {
                 int range = (int)math.ceil(inflationRadius);
                 CellType[] tempTypes = (CellType[])dataAsset.CellsType.Clone();
@@ -239,7 +278,7 @@ namespace Map
                                 {
                                     int nIndex = neighbor.y * width + neighbor.x;
                                     if (dataAsset.CellsType[nIndex] != CellType.Wall)
-                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], 10.0f);
+                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], inflationMultyplier);
                                 }
                             }
                         }
@@ -263,7 +302,7 @@ namespace Map
             {
                 DestroyImmediate(parentFolder.GetChild(i).gameObject);
             }
-            
+
             if (dataAsset != null)
             {
                 dataAsset.hasData = false;

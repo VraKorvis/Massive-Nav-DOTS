@@ -148,6 +148,91 @@ public static class GridUtils
         return grid.CellsType[index] == CellType.Wall;
     }
 
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float GetHeightBilinear(ref GridBlob grid, float3 worldPos)
+    {
+        float2 localPos = (worldPos.xz - grid.Origin.xz) / grid.CellSize - 0.5f;
+
+        int x0 = math.clamp((int)math.floor(localPos.x), 0, grid.Dimensions.x - 2);
+        int y0 = math.clamp((int)math.floor(localPos.y), 0, grid.Dimensions.y - 2);
+
+        float2 t = math.frac(localPos);
+        int width = grid.Dimensions.x;
+
+        int i00 = y0 * width + x0;
+        int i10 = y0 * width + (x0 + 1);
+        int i01 = (y0 + 1) * width + x0;
+        int i11 = (y0 + 1) * width + (x0 + 1);
+
+        float h00 = grid.Heights[i00];
+        float h10 = grid.Heights[i10];
+        float h01 = grid.Heights[i01];
+        float h11 = grid.Heights[i11];
+
+        if (float.IsInfinity(grid.Weights[i10])) h10 = h00;
+        if (float.IsInfinity(grid.Weights[i01])) h01 = h00;
+        if (float.IsInfinity(grid.Weights[i11])) h11 = h00;
+
+        return math.lerp(math.lerp(h00, h10, t.x), math.lerp(h01, h11, t.x), t.y);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float3 GetNormalBilinear(ref GridBlob grid, float3 worldPos)
+    {
+        float2 localPos = (worldPos.xz - grid.Origin.xz) / grid.CellSize - 0.5f;
+
+        int x0 = math.clamp((int)math.floor(localPos.x), 0, grid.Dimensions.x - 2);
+        int y0 = math.clamp((int)math.floor(localPos.y), 0, grid.Dimensions.y - 2);
+
+        float2 t = math.frac(localPos);
+        int width = grid.Dimensions.x;
+
+        int i00 = y0 * width + x0;
+        int i10 = y0 * width + (x0 + 1);
+        int i01 = (y0 + 1) * width + x0;
+        int i11 = (y0 + 1) * width + (x0 + 1);
+
+        float3 n00 = grid.Normals[i00];
+        float3 n10 = grid.Normals[i10];
+        float3 n01 = grid.Normals[i01];
+        float3 n11 = grid.Normals[i11];
+
+        if (float.IsInfinity(grid.Weights[i10])) n10 = n00;
+        if (float.IsInfinity(grid.Weights[i01])) n01 = n00;
+        if (float.IsInfinity(grid.Weights[i11])) n11 = n00;
+
+        return math.normalize(math.lerp(math.lerp(n00, n10, t.x), math.lerp(n01, n11, t.x), t.y));
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+    public static float GetWeightBilinear(ref GridBlob grid, float3 worldPos)
+    {
+        float2 localPos = (worldPos.xz - grid.Origin.xz) / grid.CellSize - 0.5f;
+
+        int x0 = math.clamp((int)math.floor(localPos.x), 0, grid.Dimensions.x - 2);
+        int y0 = math.clamp((int)math.floor(localPos.y), 0, grid.Dimensions.y - 2);
+
+        float2 t = math.frac(localPos);
+        int width = grid.Dimensions.x;
+
+        int i00 = y0 * width + x0;
+        int i10 = y0 * width + (x0 + 1);
+        int i01 = (y0 + 1) * width + x0;
+        int i11 = (y0 + 1) * width + (x0 + 1);
+
+        float w00 = grid.Weights[i00];
+        float w10 = grid.Weights[i10];
+        float w01 = grid.Weights[i01];
+        float w11 = grid.Weights[i11];
+        
+        if (float.IsInfinity(w00)) w00 = 1.0f;
+        if (float.IsInfinity(w10)) w10 = 1.0f;
+        if (float.IsInfinity(w01)) w01 = 1.0f;
+        if (float.IsInfinity(w11)) w11 = 1.0f;
+
+        return math.lerp(math.lerp(w00, w10, t.x), math.lerp(w01, w11, t.x), t.y);
+    }
+    
     /// <summary>
     /// Calculates the Manhattan distance (L1 norm) between two grid coordinates.
     /// Suitable for grids where movement is restricted to 4 directions (up, down, left, right).
