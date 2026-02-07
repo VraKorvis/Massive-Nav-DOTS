@@ -81,7 +81,6 @@ namespace Gameplay
             _spawnedCount += toSpawn;
             instances.Dispose(state.Dependency);
 
-            state.Enabled = false;
         }
     }
 
@@ -133,7 +132,7 @@ namespace Gameplay
 
             MoveSettingsLookup[entity] = new MoveSettings
             {
-                speed = random.NextFloat(2f, 7f)
+                Speed = random.NextFloat(2f, 7f)
             };
             MetaLookup[entity] = new PFRequestMetadata
             {
