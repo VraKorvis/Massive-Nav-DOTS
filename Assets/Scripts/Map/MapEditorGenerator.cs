@@ -44,7 +44,7 @@ namespace Map
         [Range(0, 2)]
         public float verticalOffset = 0.5f;
         public bool hasInflation = false;
-        public float inflationMultyplier = 1f;
+        public float inflationMultiplier = 1f;
         public float inflationRadius = 1.0f;
         public float wallAvoidanceRange = 1.2f;
         
@@ -346,7 +346,7 @@ namespace Map
                                 {
                                     int nIndex = neighbor.y * width + neighbor.x;
                                     if (dataAsset.CellsType[nIndex] != CellType.Wall)
-                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], inflationMultyplier);
+                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], inflationMultiplier);
                                 }
                             }
                         }
