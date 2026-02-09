@@ -7,12 +7,15 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
+using Unity.VisualScripting;
 
 namespace Gameplay
 {
     [BurstCompile]
     public partial struct SpawnEnemySystem : ISystem
     {
+        private NativeList<Entity> _spawnedEntities;
+        
         private ComponentLookup<PFRequestAgent> _requestLookup;
         private ComponentLookup<LocalTransform> _transformLookup;
         private ComponentLookup<MoveSettings> _moveSettingsLookup;
@@ -24,6 +27,8 @@ namespace Gameplay
         {
             state.RequireForUpdate<PlayerTag>();
             state.RequireForUpdate<SpawnerConfig>();
+            
+            _spawnedEntities = new NativeList<Entity>(Allocator.Persistent);
 
             _requestLookup = state.GetComponentLookup<PFRequestAgent>(false);
             _transformLookup = state.GetComponentLookup<LocalTransform>(false);
@@ -35,17 +40,32 @@ namespace Gameplay
         }
 
         [BurstCompile]
+        public void OnDestroy(ref SystemState state)
+        {
+            if (_spawnedEntities.IsCreated)
+            {
+                _spawnedEntities.Dispose();
+            }
+        }
+
+        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out var targetEntity)) return;
+
+            if (!SystemAPI.TryGetSingleton<GridBlobReference>(out var gridRef)) return;
+
             if (!SystemAPI.TryGetSingleton<SpawnerConfig>(out var config)) return;
 
             if (_spawnedCount >= config.Count)
             {
-                state.Enabled = false; 
+                if (_spawnedEntities.IsCreated)
+                {
+                    _spawnedEntities.Dispose(state.Dependency);
+                }
+                state.Enabled = false;
                 return;
             }
-            
-            if (!SystemAPI.TryGetSingleton<GridBlobReference>(out var gridRef)) return;
             
             var gridBlobRef = gridRef.Value;
             
@@ -54,17 +74,16 @@ namespace Gameplay
             _moveSettingsLookup.Update(ref state);
             _metaLookup.Update(ref state);
             
-            
-            var targetEntity = SystemAPI.GetSingletonEntity<PlayerTag>();
-
             int toSpawn = math.min(config.BatchSize, config.Count - _spawnedCount);
+            _spawnedEntities.Clear();
+            _spawnedEntities.ResizeUninitialized(toSpawn);
             
-            var instances = state.EntityManager.Instantiate(config.Prefab, toSpawn, Allocator.TempJob);            
+            state.EntityManager.Instantiate(config.Prefab, _spawnedEntities.AsArray());
             
             var setupJobHandle = new SetupSpawnedAgentsJob
             {
                 GridBlobRef = gridBlobRef,
-                Entities = instances,
+                Entities = _spawnedEntities.AsDeferredJobArray(),
                 TargetEntity = targetEntity,
                 Config = config,
                 StartIndex = _spawnedCount,
@@ -75,11 +94,9 @@ namespace Gameplay
                 MetaLookup = _metaLookup
             }.Schedule(toSpawn, 64, state.Dependency);
 
-            state.Dependency = setupJobHandle;
-
             _spawnedCount += toSpawn;
-            instances.Dispose(state.Dependency);
 
+            state.Dependency = setupJobHandle;
         }
     }
 
@@ -141,4 +158,6 @@ namespace Gameplay
             };
         }
     }
+    
+    
 }
