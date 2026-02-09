@@ -24,15 +24,22 @@ namespace Input
             if (_mainCamera == null || !_inputActions.Player.Click.WasPressedThisFrame()) return;
 
             Vector2 mousePos = UnityEngine.InputSystem.Mouse.current.position.ReadValue();
+            
+            var mouse = UnityEngine.InputSystem.Mouse.current;
+            if (mouse == null) return;
+            
             var ray = _mainCamera.ScreenPointToRay(mousePos);
     
             if (new Plane(Vector3.up, Vector3.zero).Raycast(ray, out float dist))
             {
-                var entity = SystemAPI.GetSingletonEntity<ClickEntityTag>();
+                int button = mouse.leftButton.wasPressedThisFrame ? 0 : 1;
                 var worldPos = ray.GetPoint(dist);
-
-                SystemAPI.SetComponent(entity, new ClickEventData { WorldPosition = worldPos });
-                SystemAPI.SetComponentEnabled<IsClickTag>(entity, true);
+                var queue = SystemAPI.GetSingleton<ClickEventQueue>().Queue;
+                queue.Enqueue(new ClickEntry()
+                {
+                    WorldPosition = worldPos,
+                    MouseButton = button,
+                });
             }
         }
 

@@ -1,5 +1,6 @@
 using Gameplay.Player;
 using PFStar;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Transforms;
 
@@ -11,14 +12,14 @@ namespace Input
         public void OnUpdate(ref SystemState state)
         {
             state.Enabled = false;
-            var ecb = new EntityCommandBuffer(Unity.Collections.Allocator.Temp);
+            var ecb = new EntityCommandBuffer(Allocator.Temp);
             
             var clicker = ecb.CreateEntity();
             ecb.AddComponent(clicker, new ClickEntityTag());
-            ecb.AddComponent(clicker, new ClickEventData());
-            ecb.AddComponent(clicker, new IsClickTag());
-            ecb.SetComponentEnabled<IsClickTag>(clicker, false);
-
+            ecb.AddComponent(clicker, new ClickEventQueue()
+            {
+                    Queue = new NativeQueue<ClickEntry>(Allocator.Persistent)
+            });
 
             var marker = ecb.CreateEntity();
             ecb.AddComponent(marker, new ClickMarkerTag());
@@ -33,6 +34,11 @@ namespace Input
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
 
+        }
+
+        public void OnDestroy(ref SystemState state)
+        {
+            SystemAPI.GetSingleton<ClickEventQueue>().Queue.Dispose();
         }
     }
 }
