@@ -297,14 +297,16 @@ namespace PFStar
                 _cameFrom = new NativeArray<int2>(totalCapacity, Allocator.Persistent);
                 _openSet = new NativeBinaryMinHeap(totalCapacity, Allocator.Persistent);
             }
-
-
+            
+            uint uniqueSearchID = state.GlobalSystemVersion;
+            
 #if UNITY_EDITOR
             using (k_ProfilePlayerPathLogic.Auto())
             {
 #endif
                 if (!_playerQuery.IsEmpty)
                 {
+                    state.Dependency.Complete();
                     var playerEntity = _playerQuery.GetSingletonEntity();
                     var playerState = SystemAPI.GetComponent<PFAgentState>(playerEntity);
                     if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) &&
@@ -332,6 +334,7 @@ namespace PFStar
                             GridSize = gridSize,
                             Neighbours = _neighbours,
                             AgentStateLookup = _agentStateLookup,
+                            UniqueSearchID = uniqueSearchID
                         };
 
                         state.Dependency = playerJob.Schedule(state.Dependency);
@@ -375,8 +378,6 @@ namespace PFStar
                 NavigationTargetLookup = _navigationTargetLookup,
                 TransformLookup = _transformLookup,
             }.Schedule(agentsToProcess, batchSize, sortHandle);
-
-            uint uniqueSearchID = state.GlobalSystemVersion;
             
             var findHandle = new FindPathAStarJob
             {
@@ -435,6 +436,7 @@ namespace PFStar
             [ReadOnly]
             public NativeArray<int2> Neighbours;
             public int GridSize;
+            public uint UniqueSearchID;
 
             public void Execute()
             {
@@ -442,6 +444,8 @@ namespace PFStar
 
                 Waypoints.Clear();
 
+                uint finalSearchID = UniqueSearchID + (uint)PlayerEntity.Index;
+                
                 var box = new BoxData
                 {
                     GridBlob = GridBlob,
@@ -457,7 +461,7 @@ namespace PFStar
                     CameFrom = CameFrom,
                     SearchVersions = SearchVersions,
                     OpenSet = OpenSet,
-                    SearchID = 1
+                    SearchID = finalSearchID
                 };
 
                 if (AStarCrowd.FindPath(ref box, Neighbours, GreedyCoef))
