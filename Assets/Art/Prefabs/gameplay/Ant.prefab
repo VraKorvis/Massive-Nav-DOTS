@@ -62,7 +62,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 12e5582405e134b3e95ea0dc8f35223a, type: 3}
       propertyPath: m_StaticShadowCaster
-      value: 1
+      value: 0
       objectReference: {fileID: 0}
     - target: {fileID: -7511558181221131132, guid: 12e5582405e134b3e95ea0dc8f35223a, type: 3}
       propertyPath: 'm_Materials.Array.data[0]'
@@ -110,6 +110,13 @@ MonoBehaviour:
   isMoving: 0
   speed: 4.7
   startDelay: 0.2
+  rotSpeed: 10
+  acceleration: 12
+  minSpeedMul: 0.7
+  maxSpeedMul: 2
+  verticalSmoothSpeed: 6
+  maxClimbRateFactor: 1.2
+  arrivalRadiusFactor: 0.45
 --- !u!114 &434814833978289653
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -122,7 +129,6 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 0db3ee40b3da6fb4db3c9fc88b829f6f, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PFStar.PFAgentAuthoring
-  status: 0
 --- !u!114 &-8365881054777403104
 MonoBehaviour:
   m_ObjectHideFlags: 0
