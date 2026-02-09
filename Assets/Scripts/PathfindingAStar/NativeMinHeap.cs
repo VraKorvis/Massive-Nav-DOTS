@@ -11,27 +11,20 @@ using Unity.Mathematics;
 [NativeContainerSupportsDeallocateOnJobCompletion]
 public unsafe struct NativeMinHeap : IDisposable
 {
-    private Allocator allocator;
-
     [NativeDisableUnsafePtrRestriction] private MinHeapNode* buffer;
-
+    private Allocator allocator;
     private int capacity;
-
-#if ENABLE_UNITY_COLLECTIONS_CHECKS
-    private AtomicSafetyHandle m_Safety;
-
-#endif
-
     private int head;
     private int length;
-    private int _padding; // stub, NativeMinHeap => 24b
+    
+#if ENABLE_UNITY_COLLECTIONS_CHECKS
+    private AtomicSafetyHandle m_Safety;
+#endif
 
     public bool IsCreated => buffer != null;
 
     public NativeMinHeap(int capacity, Allocator allocator)
     {
-        _padding = 0;
-
         var size = (long)UnsafeUtility.SizeOf<MinHeapNode>() * capacity;
 
         if (allocator <= Allocator.None)

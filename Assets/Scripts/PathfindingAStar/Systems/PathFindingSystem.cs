@@ -10,8 +10,6 @@ using Unity.Profiling;
 using Unity.Transforms;
 using UnityEngine;
 
-[assembly: RegisterGenericJobType(typeof(SortJob<PFStar.SortableRequest, PFStar.RequestComparer>))]
-
 namespace PFStar
 {
     public struct AStarCrowd
@@ -36,7 +34,7 @@ namespace PFStar
 
             var H = GridUtils.H_Octile(box.StartPos, box.Destination);
             float weightedH = H * box.GreedyCoef;
-            box.OpenSet.Push(new MinHeapNode(box.StartPos, weightedH, weightedH));
+            box.OpenSet.Push(new BinaryHeapNode(box.StartPos, weightedH, weightedH));
             float minH = float.MaxValue;
 
             int2 bestPointSoFar = box.StartPos;
@@ -75,7 +73,7 @@ namespace PFStar
                     {
                         int2 side1 = new int2(current.Position.x + step.x, current.Position.y);
                         int2 side2 = new int2(current.Position.x, current.Position.y + step.y);
-    
+
                         int idx1 = GridUtils.CoordToIndex(side1, box.DimX);
                         int idx2 = GridUtils.CoordToIndex(side2, box.DimX);
 
@@ -110,7 +108,7 @@ namespace PFStar
                     weightedH = h * greedyCoef;
 
                     float f = newCost + weightedH;
-                    box.OpenSet.Push(new MinHeapNode(nextPosition, f, weightedH));
+                    box.OpenSet.Push(new BinaryHeapNode(nextPosition, f, weightedH));
                 }
             }
 
@@ -163,10 +161,10 @@ namespace PFStar
         public int2 Destination;
         public NativeSlice<float> CostSoFar;
         public NativeSlice<int2> CameFrom;
-        public NativeMinHeap OpenSet;
+        public NativeBinaryMinHeap OpenSet;
 
-        public NativeSlice<int> SearchVersions;
-        public int SearchID;
+        public NativeSlice<uint> SearchVersions;
+        public uint SearchID;
 
         public float GreedyCoef;
         public int IterationLimit;
@@ -181,7 +179,6 @@ namespace PFStar
         private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new("[PF] Player.Pathfinding.Scheduling");
 #endif
 
-
         private const int VipOffset = 1;
         private const int VipIterationLimit = 10000;
 
@@ -191,9 +188,14 @@ namespace PFStar
 
         private NativeArray<int2> _neighbours;
         private NativeArray<float> _costSoFar;
-        private NativeArray<int> _searchVersions;
+        private NativeArray<uint> _searchVersions;
         private NativeArray<int2> _cameFrom;
+
+#if USE_BINARY_HEAP
         private NativeMinHeap _openSet;
+#else
+        private NativeBinaryMinHeap _openSet;
+#endif
 
         private const int NeighborCount = 8;
 
@@ -283,8 +285,6 @@ namespace PFStar
             bool sizeChanged = gridSize != _currentBufferSize;
             bool limitIncreased = maxPerFrame > currentPhysicalLimit;
 
-            state.Dependency.Complete();
-            
             if (gridSize > 0 && (!_costSoFar.IsCreated || sizeChanged || limitIncreased))
             {
                 if (_costSoFar.IsCreated) DisposeAll();
@@ -292,54 +292,54 @@ namespace PFStar
                 _currentBufferSize = gridSize;
                 int totalCapacity = (maxPerFrame + VipOffset) * _currentBufferSize;
 
-                _searchVersions = new NativeArray<int>(totalCapacity, Allocator.Persistent);
+                _searchVersions = new NativeArray<uint>(totalCapacity, Allocator.Persistent);
                 _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
                 _cameFrom = new NativeArray<int2>(totalCapacity, Allocator.Persistent);
-                _openSet = new NativeMinHeap(totalCapacity, Allocator.Persistent);
+                _openSet = new NativeBinaryMinHeap(totalCapacity, Allocator.Persistent);
             }
 
 
 #if UNITY_EDITOR
-            var markerScope = k_ProfilePlayerPathLogic.Auto();
-#endif
-
-            if (!_playerQuery.IsEmpty)
+            using (k_ProfilePlayerPathLogic.Auto())
             {
-                var playerEntity = _playerQuery.GetSingletonEntity();
-                var playerState = SystemAPI.GetComponent<PFAgentState>(playerEntity);
-                if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) &&
-                    (playerState.Flags & (byte)PFAgentStatus.Find) != 0)
+#endif
+                if (!_playerQuery.IsEmpty)
                 {
-                    var pState = _agentStateLookup[playerEntity];
-                    pState.Flags &= (byte)~PFAgentStatus.Find;
-                    _agentStateLookup[playerEntity] = pState;
-
-                    var playerRequest = SystemAPI.GetComponent<PFRequestAgent>(playerEntity);
-                    var playerJob = new PlayerPathJob
+                    var playerEntity = _playerQuery.GetSingletonEntity();
+                    var playerState = SystemAPI.GetComponent<PFAgentState>(playerEntity);
+                    if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) &&
+                        (playerState.Flags & (byte)PFAgentStatus.Find) != 0)
                     {
-                        VipIterationLimit = VipIterationLimit,
-                        GreedyCoef = 1,
-                        PlayerEntity = playerEntity,
-                        CostSoFar = _costSoFar,
-                        CameFrom = _cameFrom,
-                        SearchVersions = _searchVersions,
-                        OpenSet = _openSet,
-                        StartPos = playerRequest.StartCoord,
-                        Destination = playerRequest.Destination,
-                        Waypoints = _waypointLookup[playerEntity],
-                        GridBlob = gridBlobRef,
-                        Dimensions = dimensions,
-                        GridSize = gridSize,
-                        Neighbours = _neighbours,
-                        AgentStateLookup = _agentStateLookup,
-                    };
+                        var pState = _agentStateLookup[playerEntity];
+                        pState.Flags &= (byte)~PFAgentStatus.Find;
+                        _agentStateLookup[playerEntity] = pState;
 
-                    state.Dependency = playerJob.Schedule(state.Dependency);
+                        var playerRequest = SystemAPI.GetComponent<PFRequestAgent>(playerEntity);
+                        var playerJob = new PlayerPathJob
+                        {
+                            VipIterationLimit = VipIterationLimit,
+                            GreedyCoef = 1,
+                            PlayerEntity = playerEntity,
+                            CostSoFar = _costSoFar,
+                            CameFrom = _cameFrom,
+                            SearchVersions = _searchVersions,
+                            OpenSet = _openSet,
+                            StartPos = playerRequest.StartCoord,
+                            Destination = playerRequest.Destination,
+                            Waypoints = _waypointLookup[playerEntity],
+                            GridBlob = gridBlobRef,
+                            Dimensions = dimensions,
+                            GridSize = gridSize,
+                            Neighbours = _neighbours,
+                            AgentStateLookup = _agentStateLookup,
+                        };
+
+                        state.Dependency = playerJob.Schedule(state.Dependency);
+                    }
                 }
-            }
 
 #if UNITY_EDITOR
-            markerScope.Dispose();
+            }
 #endif
 
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
@@ -363,7 +363,7 @@ namespace PFStar
             {
                 GridOrigin = gridBlobRef.Value.Origin,
                 Cellsize = gridBlobRef.Value.CellSize,
-                Dimensions  = gridBlobRef.Value.Dimensions,
+                Dimensions = gridBlobRef.Value.Dimensions,
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
 
                 SortedList = sortableList,
@@ -376,6 +376,8 @@ namespace PFStar
                 TransformLookup = _transformLookup,
             }.Schedule(agentsToProcess, batchSize, sortHandle);
 
+            uint uniqueSearchID = state.GlobalSystemVersion;
+            
             var findHandle = new FindPathAStarJob
             {
                 Offset = VipOffset,
@@ -392,6 +394,7 @@ namespace PFStar
                 AgentStateLookup = _agentStateLookup,
                 PathList = pathArray,
                 SearchVersions = _searchVersions,
+                UniqueSearchID = uniqueSearchID,
 
                 CostSoFar = _costSoFar,
                 CameFrom = _cameFrom,
@@ -419,8 +422,8 @@ namespace PFStar
 
             public NativeArray<float> CostSoFar;
             public NativeArray<int2> CameFrom;
-            public NativeArray<int> SearchVersions;
-            public NativeMinHeap OpenSet;
+            public NativeArray<uint> SearchVersions;
+            public NativeBinaryMinHeap OpenSet;
 
             public int2 StartPos;
             public int2 Destination;
@@ -502,7 +505,7 @@ namespace PFStar
             public float3 GridOrigin;
             public float Cellsize;
             public int2 Dimensions;
-            
+
             [ReadOnly]
             public NativeList<SortableRequest> SortedList;
 
@@ -545,11 +548,11 @@ namespace PFStar
                     request.Destination = targetData.CurrentCell;
 
                     request.StartCoord = math.clamp(
-                        GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize), 
-                        0, 
+                        GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize),
+                        0,
                         Dimensions - 1
                     );
-                    
+
                     var state = AgentStateLookup[entity];
                     state.Flags |= (byte)PFAgentStatus.Process;
                     state.Flags &= (byte)~(PFAgentStatus.Find | PFAgentStatus.Idle |
@@ -579,7 +582,7 @@ namespace PFStar
         {
             public int Offset;
             public int2 Dimensions;
-            
+
             public int GridStride;
 
             public float GreedyCoef;
@@ -602,16 +605,17 @@ namespace PFStar
             public ComponentLookup<PFAgentState> AgentStateLookup;
 
             [NativeDisableParallelForRestriction]
-            public NativeArray<int> SearchVersions;
+            public NativeArray<uint> SearchVersions;
             [NativeDisableParallelForRestriction]
             public NativeArray<float> CostSoFar;
             [NativeDisableParallelForRestriction]
             public NativeArray<int2> CameFrom;
             [NativeDisableParallelForRestriction]
-            public NativeMinHeap OpenSet;
+            public NativeBinaryMinHeap OpenSet;
 
             [ReadOnly]
             public NativeArray<int2> Neighbours;
+            public uint UniqueSearchID;
 
             public void Execute(int index)
             {
@@ -625,7 +629,7 @@ namespace PFStar
                 var openSetSlice = OpenSet.Slice(actualIndex * GridStride, GridStride);
 
                 var request = PathList[index];
-                
+
                 openSetSlice.Clear();
 
                 if (request.Owner == Entity.Null) return;
@@ -638,7 +642,7 @@ namespace PFStar
                 var waypoints = WaypointsLookup[request.Owner];
                 waypoints.Clear();
 
-                int uniqueSearchID = math.max(1, (CurrentFrame * 100000) + index);
+                uint finalSearchID = UniqueSearchID + (uint)index;
 
                 var box = new BoxData
                 {
@@ -654,7 +658,7 @@ namespace PFStar
                     CameFrom = cameFromSlice,
                     OpenSet = openSetSlice,
                     SearchVersions = searchVersionsSlice,
-                    SearchID = uniqueSearchID,
+                    SearchID = finalSearchID,
                 };
 
                 if (AStarCrowd.FindPath(ref box, Neighbours, GreedyCoef))
