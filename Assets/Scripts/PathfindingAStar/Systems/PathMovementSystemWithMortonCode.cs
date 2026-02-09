@@ -25,12 +25,11 @@ namespace PFStar
 
         private NativeArray<float3> _positionCacheA, _positionCacheB;
         private NativeArray<MortonEntry> _mortonEntries;
-
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
-
+        
         private NativeArray<MortonEntry> _mortonA, _mortonB;
         private NativeArray<MortonEntry> _radixTempBuffer;
-
+        
+        private NativeArray<int> _cellStartsA, _cellStartsB;
         private JobHandle _lastSortHandle;
         private JobHandle _handleA;
         private JobHandle _handleB;
@@ -38,6 +37,7 @@ namespace PFStar
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridTag>();
             _agentQuery = new EntityQueryBuilder(Allocator.Temp)
                 .WithAll<PFAgentState>()
@@ -46,7 +46,6 @@ namespace PFStar
                 .WithAll<MoveSettings>()
                 .WithAll<MinionTag>()
                 .Build(ref state);
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
             _isBufferA = true;
         }
 
@@ -57,8 +56,10 @@ namespace PFStar
             int count = _agentQuery.CalculateEntityCount();
             if (count == 0) return;
 
-            _gridBlobLookup.Update(ref state);
-
+            var gridBlob = SystemAPI.GetSingleton<GridBlobReference>().Value;
+            var gridDims =  gridBlob.Value.Dimensions;
+            var gridSizMorton = 1 << (math.ceillog2(math.max(gridDims.x, gridDims.y)) * 2);
+            
             if (!_mortonA.IsCreated || _mortonA.Length < count)
             {
                 state.Dependency.Complete();
@@ -71,15 +72,20 @@ namespace PFStar
                 EnsureCapacity(ref _radixTempBuffer, count, default);
                 EnsureCapacity(ref _positionCacheA, count, default);
                 EnsureCapacity(ref _positionCacheB, count, default);
+                EnsureCapacity(ref _cellStartsA, gridSizMorton, default);
+                EnsureCapacity(ref _cellStartsB, gridSizMorton, default);
             }
-
+            
             var readyMorton = _isBufferA ? _mortonA : _mortonB;
             var readyHandle = _isBufferA ? _handleA : _handleB;
             var nextPositionCache = _isBufferA ? _positionCacheB : _positionCacheA;
             var nextMorton = _isBufferA ? _mortonB : _mortonA;
             
+            var readyCellStarts = _isBufferA ? _cellStartsA : _cellStartsB; 
+            var nextCellStarts = _isBufferA ? _cellStartsB : _cellStartsA;
+            
             var transforms = _agentQuery.ToComponentDataArray<LocalTransform>(Allocator.TempJob);
-            var copyJob = new CopyPositionsParallelJob
+            var copyJobHandle = new CopyPositionsParallelJob
             {
                 Transforms = transforms,
                 Positions = nextPositionCache
@@ -89,12 +95,13 @@ namespace PFStar
             {
                 state.Dependency = new PathMovePBDJob
                 {
-                    GridBlob = _gridBlobLookup[SystemAPI.GetSingletonEntity<GridTag>()].Value,
+                    GridBlob = gridBlob,
                     SortedEntries = readyMorton,
                     DeltaTime = SystemAPI.Time.DeltaTime,
                     CellSize = navSettings.SpatialCellSize,
                     SeparationRadius = navSettings.SeparationRadius,
                     SeparationWeight = navSettings.SeparationWeight,
+                    CellStarts = readyCellStarts,
                     FramePhase = Time.frameCount % 2,
                     AgentCount = count
                 }.ScheduleParallel(_agentQuery, JobHandle.CombineDependencies(state.Dependency, readyHandle));
@@ -104,7 +111,7 @@ namespace PFStar
 
             if (nextHandle.IsCompleted)
             {
-                var prepareDeps = JobHandle.CombineDependencies(copyJob, state.Dependency);
+                var prepareDeps = JobHandle.CombineDependencies(copyJobHandle, state.Dependency);
                 var entities = _agentQuery.ToEntityArray(Allocator.TempJob);
 
                 var prepareHandle = new PrepareMortonJobForArray
@@ -120,24 +127,29 @@ namespace PFStar
                     Data = nextMorton,
                     TempBuffer = _radixTempBuffer
                 }.Schedule(prepareHandle);
+                
+                var buildIndexHandle = new BuildCellStartsJob
+                {
+                    SortedEntries = nextMorton,
+                    CellStarts = nextCellStarts 
+                }.Schedule(sortHandle);
 
                 if (_isBufferA)
                 {
-                    _handleB = sortHandle;
+                    _handleB = buildIndexHandle;
                 }
                 else
                 {
-                    _handleA = sortHandle;
+                    _handleA = buildIndexHandle;
                 }
 
                 _isBufferA = !_isBufferA;
             }
             
-            state.Dependency = JobHandle.CombineDependencies(state.Dependency, copyJob);
+            state.Dependency = JobHandle.CombineDependencies(state.Dependency, copyJobHandle);
             _initialized = true;
         }
-
-
+        
         [BurstCompile]
         private struct CopyPositionsParallelJob : IJobParallelFor
         {
@@ -224,6 +236,40 @@ namespace PFStar
                 }
             }
         }
+        
+        [BurstCompile]
+        struct BuildCellStartsJob : IJob
+        {
+            [ReadOnly] public NativeArray<MortonEntry> SortedEntries;
+            public NativeArray<int> CellStarts;
+
+            public void Execute()
+            {
+                for (int i = 0; i < CellStarts.Length; i++) 
+                    CellStarts[i] = -1;
+
+                if (SortedEntries.Length > 0)
+                {
+                    uint lastCell = SortedEntries[0].Key;
+
+                    if (lastCell < CellStarts.Length)
+                    {
+                        CellStarts[(int)lastCell] = 0;
+                    }
+
+                    for (int i = 1; i < SortedEntries.Length; i++)
+                    {
+                        uint currentCell = SortedEntries[i].Key;
+                        if (currentCell != lastCell)
+                        {
+                            if (currentCell < CellStarts.Length)
+                                CellStarts[(int)currentCell] = i;
+                            lastCell = currentCell;
+                        }
+                    }
+                }
+            }
+        }
 
         [BurstCompile]
         public partial struct PathMovePBDJob : IJobEntity
@@ -240,6 +286,7 @@ namespace PFStar
             public float SeparationWeight;
             public int FramePhase;
             public int AgentCount;
+            [ReadOnly] public NativeArray<int> CellStarts;
 
             private void Execute(
                 [EntityIndexInQuery] int myIndex,
@@ -279,13 +326,27 @@ namespace PFStar
 
                 if (myIndex % 2 == FramePhase)
                 {
-                    uint myCode = MortonUtils.GetMorton2D(currentPos, CellSize);
+                    uint agentCode = MortonUtils.GetMorton2D(currentPos, CellSize);
                     float checkRadiusSq = SeparationRadius * SeparationRadius;
 
-                    int sortedIdx = BinarySearchMorton(SortedEntries, myCode);
-
-                    pbdDisplacement += CheckNeighbors(sortedIdx, 1, currentPos, checkRadiusSq);
-                    pbdDisplacement += CheckNeighbors(sortedIdx, -1, currentPos, checkRadiusSq);
+                    // BinarySearchMorton
+                    // int sortedIdx = BinarySearchMorton(SortedEntries, agentCode);
+                    
+                    // uint agentCode = MortonUtils.GetMorton2D(currentPos, CellSize);
+                    // pbdDisplacement += CheckNeighbors(sortedIdx, 1, currentPos, checkRadiusSq);
+                    // pbdDisplacement += CheckNeighbors(sortedIdx, -1, currentPos, checkRadiusSq);
+                    
+                    //
+                    if (agentCode < CellStarts.Length) 
+                    {
+                        int startIdx = CellStarts[(int)agentCode]; 
+                        if (startIdx != -1) 
+                        {
+                            pbdDisplacement += CheckNeighbors(startIdx, 1, currentPos, checkRadiusSq);
+                            pbdDisplacement += CheckNeighbors(startIdx, -1, currentPos, checkRadiusSq);
+                        }
+                    }
+                    
                 }
 
                 int2 cellCoord = math.clamp(GridUtils.WorldToCellCoord(currentPos, grid.Origin, grid.CellSize), 0, grid.Dimensions - 1);
@@ -406,6 +467,8 @@ namespace PFStar
             if (_mortonA.IsCreated) _mortonA.Dispose();
             if (_mortonB.IsCreated) _mortonB.Dispose();
             if (_radixTempBuffer.IsCreated) _radixTempBuffer.Dispose();
+            if (_cellStartsA.IsCreated) _cellStartsA.Dispose();
+            if (_cellStartsB.IsCreated) _cellStartsB.Dispose();
         }
 
     }
