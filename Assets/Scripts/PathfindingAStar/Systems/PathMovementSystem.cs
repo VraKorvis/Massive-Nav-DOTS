@@ -52,47 +52,34 @@ namespace PFStar
                 ref PFAgentState agentState,
                 in PlayerTag playerTag)
             {
-                if (way.IsEmpty)
+                
+                ref var grid = ref GridBlob.Value;
+
+                float3 pos = transform.Position;
+                float baseRadius = math.max(0.05f, grid.CellSize * moveData.ArrivalRadiusFactor);
+                float arrivalRadius = (way.Length == 1) ? 0.05f : baseRadius;
+                
+                if (!TrimReachedWaypoints(way, pos, arrivalRadius))
                 {
                     StopAgent(ref agentState, ref moveData);
                     return;
                 }
 
-                ref var grid = ref GridBlob.Value;
-                float3 pos = transform.Position;
                 pos.y = GridUtils.GetHeightBilinear(ref grid, pos);
                 transform.Position.y = pos.y;
                 
-                float arrivalRadius = math.max(0.05f, grid.CellSize * moveData.ArrivalRadiusFactor);
+                float3 targetPos = way[^1].point;
+                targetPos.y = GridUtils.GetHeightBilinear(ref grid, targetPos);
                 
-                TrimReachedWaypoints(way, pos, arrivalRadius);
-
-                if (way.IsEmpty)
-                {
-                    StopAgent(ref agentState, ref moveData);
-                    return;
-                }
-
-                float3 target = way[^1].point;
-                target.y = GridUtils.GetHeightBilinear(ref grid, target);
-
-                float distXZ = math.distance(pos.xz, target.xz);
-                if (distXZ <= PhysConst.EPSILON_STABLE)
-                {
-                    way.RemoveAt(way.Length - 1);
-                    return;
-                }
-                float3 moveDirXZ = math.normalize(new float3(target.x - pos.x, 0, target.z - pos.z));
+                float3 moveDirXZ = math.normalize(new float3(targetPos.x - pos.x, 0, targetPos.z - pos.z));
+                float distXZ = math.distance(pos.xz, targetPos.xz);
+                float desiredSpeed = CalculateDesiredSpeed(in moveData, ref grid, pos, moveData.Speed, targetPos.y, distXZ, arrivalRadius);
                 
-                float desiredSpeed = CalculateDesiredSpeed(in moveData, ref grid, pos, moveData.Speed, target.y, distXZ, arrivalRadius);
-
                 float3 nextPos = CalculateNextPosition(in moveData, ref grid, pos, moveDirXZ, desiredSpeed, grid.CellSize);
 
                 ApplyMovement(ref moveData,  ref transform, pos, nextPos);
-
-                ApplyRotation(in moveData, ref transform, ref grid, pos, target, moveDirXZ);
-
-                moveData.TargetCellPos = target;
+                ApplyRotation(in moveData, ref transform, ref grid, pos, targetPos, moveDirXZ);
+                moveData.TargetCellPos = targetPos;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -156,12 +143,13 @@ namespace PFStar
                 float blend = math.clamp(moveData.Acceleration * DeltaTime, 0f, 1f);
 
                 moveData.Velocity = math.lerp(moveData.Velocity, desiredVelocity, blend);
-                transform.Position += moveData.Velocity * DeltaTime;
+                float3 finalPos = pos + (moveData.Velocity * DeltaTime);
                 
                 float alphaY = math.clamp(DeltaTime * moveData.VerticalSmoothSpeed, 0f, 1f);
                 float finalHeight = GridUtils.GetHeightBilinear(ref GridBlob.Value, transform.Position);
-                
-                transform.Position.y = math.lerp(transform.Position.y, finalHeight, alphaY);
+                finalPos.y = math.lerp(pos.y, finalHeight, alphaY);
+
+                transform.Position = finalPos;
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
@@ -172,7 +160,10 @@ namespace PFStar
                 float3 surfaceNormal = math.normalize(math.lerp(nCur, nTgt, 0.5f));
 
                 float3 tangent = dirXZ - surfaceNormal * math.dot(dirXZ, surfaceNormal);
-                if (math.lengthsq(tangent) < PhysConst.EPSILON_STABLE) tangent = dirXZ;
+                if (math.lengthsq(tangent) < PhysConst.EPSILON_STABLE)
+                {
+                    tangent = transform.Forward();
+                }
                 tangent = math.normalize(tangent);
 
                 quaternion targetRot = quaternion.LookRotationSafe(tangent, surfaceNormal);
@@ -180,7 +171,7 @@ namespace PFStar
             }
 
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
-            private void TrimReachedWaypoints(DynamicBuffer<Waypoint> way, float3 pos, float arrivalRadius)
+            private bool TrimReachedWaypoints(DynamicBuffer<Waypoint> way, float3 pos, float arrivalRadius)
             {
                 while (!way.IsEmpty)
                 {
@@ -191,8 +182,9 @@ namespace PFStar
                         way.RemoveAt(last);
                         continue;
                     }
-                    break;
+                    return true;
                 }
+                return false;
             }
         }
     }
