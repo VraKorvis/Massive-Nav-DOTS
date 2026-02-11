@@ -61,27 +61,35 @@ Binary      Decimal   Flags set
     
     public struct PFRequestMetadata : IComponentData
     {
-        public double RequestTime;
+        public float RequestTime;
         public int Priority;
+        public uint LastProcessedVersion;
+        public float Weight;
     }
 
-    public struct SortableRequest
+    public struct PathRequestCandidate
     {
         public Entity Entity;
-        public double RequestTime;
+        public float RequestTime;
         public int Priority;
+        public float Weight;
+
     }
 
-    public struct RequestComparer : IComparer<SortableRequest>
+    public struct RequestComparer : IComparer<PathRequestCandidate>
     {
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-        public int Compare(SortableRequest x, SortableRequest y)
+        public int Compare(PathRequestCandidate x, PathRequestCandidate y)
         {
             int priorityDiff = y.Priority - x.Priority;
             if (priorityDiff != 0) return priorityDiff;
 
+            if (x.Weight > y.Weight) return -1;
+            if (x.Weight < y.Weight) return 1;
+
             if (x.RequestTime < y.RequestTime) return -1;
             if (x.RequestTime > y.RequestTime) return 1;
+        
             return 0;
         }
     }

@@ -11,6 +11,8 @@ namespace PFStar
         public float GreedyCoef;
         public int InnerLoopBatchSize;
         
+        public int TargetJitterRange;
+        
         public float SeparationRadius;
         public float SeparationWeight;
         public float SpatialCellSize;
@@ -21,8 +23,8 @@ namespace PFStar
     {
         [Header("Requests (PathRequestUpdateSystem)")]
         [Tooltip("Hard limit on how many agents can issue a pathfinding request in a single frame. Prevents buffer overflow. Recommended: 1000-5000.")]
-        [Range(100, 10000)]
-        public int maxRequestsPerFrame = 2000;
+        [Range(100, 50000)]
+        public int maxRequestsPerFrame = 10000;
 
         [Header("A* Logic (PathFindingSystem)")]
         [Tooltip("Max entities to pre-allocate memory for. Recommended: Matches your average unit count (e.g., 100-2000).")]
@@ -53,6 +55,11 @@ namespace PFStar
         [Tooltip("Spatial Hash cell size. Recommended: separationRadius * 2.0 for optimal performance.")]
         [Range(0.2f, 4.0f)]
         public float spatialCellSize = 3f;
+        
+        [Tooltip("Target Jitter Range")]
+        [Range(0, 100)]
+        public int TargetJitterRange = 1;
+
 
         public class Baker : Baker<NavigationSettingsAuthoring>
         {
@@ -69,6 +76,8 @@ namespace PFStar
                     SeparationRadius = authoring.separationRadius,
                     SeparationWeight = authoring.separationWeight,
                     SpatialCellSize = authoring.spatialCellSize,
+                    
+                    TargetJitterRange = authoring.TargetJitterRange,
                 });
             }
         }

@@ -28,9 +28,6 @@ namespace Input
             ecb.AddComponent(marker, new MoveToCommand());
             ecb.SetComponentEnabled<MoveToCommand>(marker, false);
 
-            ecb.AddComponent(marker, new TargetChangedTag());
-            ecb.SetComponentEnabled<TargetChangedTag>(marker, false);
-
             ecb.Playback(state.EntityManager);
             ecb.Dispose();
 

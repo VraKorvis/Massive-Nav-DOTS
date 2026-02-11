@@ -190,7 +190,7 @@ namespace PFStar
         private NativeArray<float> _costSoFar;
         private NativeArray<uint> _searchVersions;
         private NativeArray<int2> _cameFrom;
-
+        
 #if USE_BINARY_HEAP
         private NativeMinHeap _openSet;
 #else
@@ -205,10 +205,11 @@ namespace PFStar
         private ComponentLookup<NavigationTargetGridData> _navigationTargetLookup;
         private ComponentLookup<PFRequestAgent> _pathRequestLookup;
         private ComponentLookup<PFAgentState> _agentStateLookup;
+        private ComponentLookup<PFRequestMetadata> _metaLookup;
 
         private ComponentLookup<GridBlobReference> _gridBlobLookup;
         private BufferLookup<Waypoint> _waypointLookup;
-
+        
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
@@ -256,6 +257,8 @@ namespace PFStar
 
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
             _agentStateLookup = state.GetComponentLookup<PFAgentState>(false);
+            _metaLookup = state.GetComponentLookup<PFRequestMetadata>(false);
+            
         }
 
         [BurstCompile]
@@ -269,6 +272,7 @@ namespace PFStar
             _pathRequestLookup.Update(ref state);
             _navigationTargetLookup.Update(ref state);
             _agentStateLookup.Update(ref state);
+            _metaLookup.Update(ref state);
 
             var batchSize = navSettings.InnerLoopBatchSize;
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
@@ -278,6 +282,7 @@ namespace PFStar
             int dimY = dimensions.y;
             int maxPerFrame = navSettings.MaxPerFrame;
 
+            int targetJitterRange = navSettings.TargetJitterRange;
             int gridSize = dimX * dimY;
 
             int currentPhysicalLimit = _costSoFar.IsCreated ? (_costSoFar.Length / _currentBufferSize) - VipOffset : -1;
@@ -287,6 +292,7 @@ namespace PFStar
 
             if (gridSize > 0 && (!_costSoFar.IsCreated || sizeChanged || limitIncreased))
             {
+                state.Dependency.Complete();
                 if (_costSoFar.IsCreated) DisposeAll();
 
                 _currentBufferSize = gridSize;
@@ -297,9 +303,9 @@ namespace PFStar
                 _cameFrom = new NativeArray<int2>(totalCapacity, Allocator.Persistent);
                 _openSet = new NativeBinaryMinHeap(totalCapacity, Allocator.Persistent);
             }
-            
-            uint uniqueSearchID = state.GlobalSystemVersion;
-            
+
+            uint uniqueSearchID = state.GlobalSystemVersion * (uint)(maxPerFrame + VipOffset + 1);
+
 #if UNITY_EDITOR
             using (k_ProfilePlayerPathLogic.Auto())
             {
@@ -317,7 +323,7 @@ namespace PFStar
                         _agentStateLookup[playerEntity] = pState;
 
                         var playerRequest = SystemAPI.GetComponent<PFRequestAgent>(playerEntity);
-                        var playerJob = new PlayerPathJob
+                        var playerJobHandle = new PlayerPathJob
                         {
                             VipIterationLimit = VipIterationLimit,
                             GreedyCoef = 1,
@@ -335,9 +341,9 @@ namespace PFStar
                             Neighbours = _neighbours,
                             AgentStateLookup = _agentStateLookup,
                             UniqueSearchID = uniqueSearchID
-                        };
-
-                        state.Dependency = playerJob.Schedule(state.Dependency);
+                        }.Schedule(state.Dependency);
+                        
+                        state.Dependency = playerJobHandle;
                     }
                 }
 
@@ -348,8 +354,8 @@ namespace PFStar
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
 
-            var sortableList = new NativeList<SortableRequest>(totalWaiting, Allocator.TempJob);
-
+            var sortableList = new NativeList<PathRequestCandidate>(totalWaiting, Allocator.TempJob);
+            
             var collectJobHandle = new CollectRequestsJob
             {
                 SortableList = sortableList.AsParallelWriter()
@@ -367,7 +373,10 @@ namespace PFStar
                 GridOrigin = gridBlobRef.Value.Origin,
                 Cellsize = gridBlobRef.Value.CellSize,
                 Dimensions = gridBlobRef.Value.Dimensions,
+                TargetJitterRange = targetJitterRange,
+
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
+                FrameCount = Time.frameCount,
 
                 SortedList = sortableList,
                 ProcessingEntities = processingEntities,
@@ -378,7 +387,7 @@ namespace PFStar
                 NavigationTargetLookup = _navigationTargetLookup,
                 TransformLookup = _transformLookup,
             }.Schedule(agentsToProcess, batchSize, sortHandle);
-            
+
             var findHandle = new FindPathAStarJob
             {
                 Offset = VipOffset,
@@ -392,7 +401,9 @@ namespace PFStar
                 GridStride = _currentBufferSize,
                 WaypointsLookup = _waypointLookup,
                 ActualPathLookup = _pathRequestLookup,
+                NavigationTargetLookup = _navigationTargetLookup,
                 AgentStateLookup = _agentStateLookup,
+                MetaLookup = _metaLookup,
                 PathList = pathArray,
                 SearchVersions = _searchVersions,
                 UniqueSearchID = uniqueSearchID,
@@ -445,7 +456,7 @@ namespace PFStar
                 Waypoints.Clear();
 
                 uint finalSearchID = UniqueSearchID + (uint)PlayerEntity.Index;
-                
+
                 var box = new BoxData
                 {
                     GridBlob = GridBlob,
@@ -486,17 +497,18 @@ namespace PFStar
         {
             [WriteOnly]
             [NativeDisableContainerSafetyRestriction]
-            public NativeList<SortableRequest>.ParallelWriter SortableList;
+            public NativeList<PathRequestCandidate>.ParallelWriter SortableList;
 
             void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
             {
                 if ((state.Flags & (byte)PFAgentStatus.Find) != 0)
                 {
-                    SortableList.AddNoResize(new SortableRequest
+                    SortableList.AddNoResize(new PathRequestCandidate
                     {
                         Entity = entity,
+                        Weight = metadata.Weight,
                         RequestTime = metadata.RequestTime,
-                        Priority = metadata.Priority,
+                        Priority = metadata.Priority
                     });
                 }
             }
@@ -509,9 +521,11 @@ namespace PFStar
             public float3 GridOrigin;
             public float Cellsize;
             public int2 Dimensions;
+            public int TargetJitterRange;
+            public int FrameCount;
 
             [ReadOnly]
-            public NativeList<SortableRequest> SortedList;
+            public NativeList<PathRequestCandidate> SortedList;
 
             [WriteOnly]
             public NativeArray<Entity> ProcessingEntities;
@@ -549,18 +563,22 @@ namespace PFStar
 
                 if (NavigationTargetLookup.TryGetComponent(request.Focus, out var targetData))
                 {
-                    request.Destination = targetData.CurrentCell;
+                    int2 rawTarget = targetData.CurrentCell;
+                    var random = Unity.Mathematics.Random.CreateFromIndex((uint)(entity.Index + (uint)FrameCount));
+                    int jR = TargetJitterRange;
+                    int2 offset = random.NextInt2(new int2(-jR, -jR), new int2(jR, jR));
+
+                    request.Destination = math.clamp(rawTarget + offset, 0, Dimensions - 1);
 
                     request.StartCoord = math.clamp(
                         GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize),
                         0,
                         Dimensions - 1
                     );
+                    request.Owner = entity;
 
                     var state = AgentStateLookup[entity];
-                    state.Flags |= (byte)PFAgentStatus.Process;
-                    state.Flags &= (byte)~(PFAgentStatus.Find | PFAgentStatus.Idle |
-                        PFAgentStatus.Significant | PFAgentStatus.ForceUpdate);
+                    state.Flags = (byte)PFAgentStatus.Processing;
 
                     float jitter = (entity.Index % 32) * 0.02f;
                     request.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
@@ -605,8 +623,12 @@ namespace PFStar
             public NativeArray<PFRequestAgent> PathList;
             [ReadOnly]
             public ComponentLookup<PFRequestAgent> ActualPathLookup;
+            [ReadOnly]
+            public ComponentLookup<NavigationTargetGridData> NavigationTargetLookup;
             [NativeDisableParallelForRestriction]
             public ComponentLookup<PFAgentState> AgentStateLookup;
+            [NativeDisableParallelForRestriction]
+            public ComponentLookup<PFRequestMetadata> MetaLookup;
 
             [NativeDisableParallelForRestriction]
             public NativeArray<uint> SearchVersions;
@@ -671,6 +693,13 @@ namespace PFStar
                     var state = AgentStateLookup[request.Owner];
                     state.Flags = (byte)(waypoints.Length > 0 ? PFAgentStatus.Process : PFAgentStatus.Idle);
                     AgentStateLookup[request.Owner] = state;
+                    
+                    if (NavigationTargetLookup.HasComponent(request.Focus))
+                    {
+                        var meta = MetaLookup[request.Owner];
+                        meta.LastProcessedVersion = NavigationTargetLookup[request.Focus].Version;
+                        MetaLookup[request.Owner] = meta;
+                    }
                 }
                 else
                 {

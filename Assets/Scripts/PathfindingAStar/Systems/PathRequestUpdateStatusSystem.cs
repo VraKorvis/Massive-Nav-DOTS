@@ -1,120 +1,87 @@
 using Unity.Burst;
 using Unity.Collections;
-using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
 
 namespace PFStar
 {
     [UpdateInGroup(typeof(SimulationSystemGroup))]
+    [UpdateBefore(typeof(PathFindingSystem))]
     [BurstCompile]
     public unsafe partial struct PathRequestUpdateStatusSystem : ISystem
     {
-        private uint _frameCount;
-        private NativeArray<int> _requestsCounter;
-        private int _staggerStep; 
+        private ComponentLookup<NavigationTargetGridData> _navigationTargetLookup;
+        private BufferLookup<Waypoint> _waypointLookup;
         
-        private ComponentLookup<TargetChangedTag> _targetChangedLookup;
-
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<NavigationSettings>();
 
             state.RequireForUpdate<GridTag>();
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<NavigationTargetGridData>();
-
-            _requestsCounter = new NativeArray<int>(1, Allocator.Persistent);
-            _requestsCounter[0] = 0;
-            _frameCount = 0;
-            _staggerStep = 10;
-
-            _targetChangedLookup = state.GetComponentLookup<TargetChangedTag>(true);
+            
+            _navigationTargetLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
+            _waypointLookup = state.GetBufferLookup<Waypoint>(true);
         }
-
-        public void OnDestroy(ref SystemState state)
-        {
-            _requestsCounter.Dispose();
-        }
-
+        
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
 
-            _targetChangedLookup.Update(ref state);
+            int maxRequests = navSettings.MaxRequestsPerFrame;
 
-            _frameCount++;
-            _requestsCounter[0] = 0;
-           
-            int currentStaggerIndex = (int)(_frameCount % _staggerStep);
+            _navigationTargetLookup.Update(ref state);
+            _waypointLookup.Update(ref state);
 
-            var job = new PathRequestStatusJob
+            var updateWeightsJob = new UpdateWeightsJob
             {
-                StaggerStep = _staggerStep,
-                CurrentStaggerIndex = currentStaggerIndex,
-                MaxRequests = navSettings.MaxRequestsPerFrame,
-                TargetChangedLookup = _targetChangedLookup,
-                CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
-                Counter = _requestsCounter,
+                TargetLookup = SystemAPI.GetComponentLookup<NavigationTargetGridData>(true),
+                WaypointLookup = SystemAPI.GetBufferLookup<Waypoint>(true),
+                CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime
+            }.ScheduleParallel(state.Dependency);
 
-                EntityLookup = SystemAPI.GetEntityStorageInfoLookup()
-            };
-
-            state.Dependency = job.ScheduleParallel(state.Dependency);
+            state.Dependency = updateWeightsJob;
         }
 
         [BurstCompile]
         [WithAll(typeof(DynamicTargetTrackingMarkerTag))]
-        public partial struct PathRequestStatusJob : IJobEntity
+        public partial struct UpdateWeightsJob : IJobEntity
         {
-            public int MaxRequests;
-
-            [NativeDisableUnsafePtrRestriction] public NativeArray<int> Counter;
-
-            [ReadOnly] public ComponentLookup<TargetChangedTag> TargetChangedLookup;
-
+            [ReadOnly]
+            public ComponentLookup<NavigationTargetGridData> TargetLookup;
+            [ReadOnly]
+            public BufferLookup<Waypoint> WaypointLookup;
             public float CurrentTime;
 
-            public int CurrentStaggerIndex;
-            public int StaggerStep;
-            public EntityStorageInfoLookup EntityLookup;
-
-            void Execute(
-                Entity entity,
-                RefRW<PFAgentState> state,
-                RefRO<PFRequestAgent> request)
+            void Execute(Entity entity, ref PFRequestMetadata metadata, ref PFAgentState state, in PFRequestAgent request)
             {
-                var flags = state.ValueRO.Flags;
+                if (!TargetLookup.HasComponent(request.Focus)) return;
 
-                if (!EntityLookup.Exists(request.ValueRO.Focus))
-                {
-                    state.ValueRW.Flags = (byte)PFAgentStatus.Idle;
-                    return;
-                }
+                if (CurrentTime < request.NextAllowedUpdateTime) return;
+
+                if ((state.Flags & (byte)PFAgentStatus.Processing) != 0) return;
                 
-                if ((flags & (byte)(PFAgentStatus.Find | PFAgentStatus.Process)) != 0)
-                    return;
+                var targetData = TargetLookup[request.Focus];
+                float weight = 0;
 
-                bool isForce = (flags & (byte)PFAgentStatus.ForceUpdate) != 0;
-                if (!isForce && CurrentTime < request.ValueRO.NextAllowedUpdateTime)
-                    return;
+                uint versionDiff = targetData.Version - metadata.LastProcessedVersion;
+                weight += versionDiff * 15f;
 
-                bool targetMoved = TargetChangedLookup.IsComponentEnabled(request.ValueRO.Focus);
-                bool isUrgent = (flags & (byte)PFAgentStatus.Significant) != 0;
+                bool hasNoPath = !WaypointLookup.HasBuffer(entity) || WaypointLookup[entity].IsEmpty;
+                if (hasNoPath) weight += 100f;
 
-                bool isScheduledFrame = (entity.Index % StaggerStep) == CurrentStaggerIndex;
+                float timeSinceUpdate = CurrentTime - metadata.RequestTime;
+                weight += timeSinceUpdate * 2f;
 
-                if (isForce || isUrgent || targetMoved || isScheduledFrame)
+                metadata.Weight = weight;
+
+                if (metadata.Weight > 5f)
                 {
-                    int* ptr = (int*)Counter.GetUnsafePtr();
-                    if (System.Threading.Interlocked.Increment(ref ptr[0]) <= MaxRequests)  
-                    {
-                        state.ValueRW.Flags |= (byte)PFAgentStatus.Find;
-                    }
+                    state.Flags = (byte)PFAgentStatus.Find;
                 }
             }
-            
-            
         }
     }
 }

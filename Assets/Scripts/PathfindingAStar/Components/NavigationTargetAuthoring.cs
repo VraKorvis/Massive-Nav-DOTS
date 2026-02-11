@@ -4,8 +4,6 @@ using UnityEngine;
 
 namespace PFStar
 {
-    public struct TargetChangedTag : IComponentData, IEnableableComponent {}
-    
     public struct NavigationTargetGridData : IComponentData
     {
         public int2 CurrentCell;
@@ -36,7 +34,8 @@ namespace PFStar
             
             AddComponent(entity, new NavigationTargetGridData 
             { 
-                CurrentCell = new int2(int.MinValue) 
+                CurrentCell = new int2(int.MinValue),
+                Version = 1,
             });
             
             AddComponent(entity, new CrowdThrottlingSettings
@@ -45,8 +44,6 @@ namespace PFStar
                 RenderEveryNth = authoring.UpdateInterval
             });
             
-            AddComponent(entity, new TargetChangedTag());
-            SetComponentEnabled<TargetChangedTag>(entity,true);
         }
     }
 }

@@ -1,4 +1,5 @@
 using Unity.Burst;
+using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -9,24 +10,18 @@ namespace PFStar
     [BurstCompile]
     public partial struct TargetGridUpdateSystem : ISystem
     {
-        private const int Threshold = 10;
-
-        private EntityQuery _allAgentsQuery;
-
+        private const int Threshold = 5;
+        
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<BeginSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridSettings>();
-            _allAgentsQuery = state.GetEntityQuery(
-                ComponentType.ReadWrite<PFAgentState>()
-            );
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
             var grid = SystemAPI.GetSingleton<GridSettings>();
-            bool anyTargetMoved = false;
 
             foreach (var (transform, targetData, entity) in
                      SystemAPI.Query<RefRO<LocalTransform>, RefRW<NavigationTargetGridData>>()
@@ -46,24 +41,9 @@ namespace PFStar
                     if (distance >= Threshold)
                     {
                         targetData.ValueRW.LastSignificantCell = clampedCoord;
-                        SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, true);
-                        anyTargetMoved = true;
-                    }
-                    else
-                    {
-                        SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, false);
+                        targetData.ValueRW.Version++;
                     }
                 }
-                else
-                {
-                    SystemAPI.SetComponentEnabled<TargetChangedTag>(entity, false);
-                }
-            }
-
-            //todo temp duck tape, need logic
-            if (anyTargetMoved)
-            {
-                state.Dependency = new SetSignificantMassiveJob().ScheduleParallel(_allAgentsQuery, state.Dependency);
             }
         }
 
