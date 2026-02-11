@@ -45,10 +45,11 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PFStar.PathfindingSettingsAuthoring
   maxRequestsPerFrame: 5619
-  maxPerFrame: 1000
+  maxPerFrame: 2000
   iterationLimit: 1000
   greedyCoef: 1.5
-  innerLoopBatchSize: 64
+  innerLoopBatchSize: 4
   separationRadius: 1.5
-  separationWeight: 0.2
+  separationWeight: 0.35
   spatialCellSize: 3
+  TargetJitterRange: 5
