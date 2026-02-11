@@ -7,7 +7,6 @@ using Unity.Entities;
 using Unity.Jobs;
 using Unity.Mathematics;
 using Unity.Transforms;
-using Unity.VisualScripting;
 
 namespace Gameplay
 {
@@ -128,14 +127,19 @@ namespace Gameplay
             var entity = Entities[index];
             var random = Random.CreateFromIndex((uint)(StartIndex + index));
             
-            var offset = random.NextFloat3(
-                new float3(-Config.SpawnRadius, 0, -Config.SpawnRadius),
-                new float3(Config.SpawnRadius, 0, Config.SpawnRadius));
+            float3 finalSpawnPos;
+            do
+            {
+                var offset = random.NextFloat3(
+                    new float3(-Config.SpawnRadius, 0, -Config.SpawnRadius),
+                    new float3(Config.SpawnRadius, 0, Config.SpawnRadius));
+            
+                var spawnPos = Config.SpawnPosition + offset;
+                float spawnHeight = GridUtils.GetHeightBilinear(ref gridBlob, spawnPos);
+                finalSpawnPos = new float3(spawnPos.x, spawnHeight, spawnPos.z);
 
-            var spawnPos = Config.SpawnPosition + offset;
-            float spawnHeight = GridUtils.GetHeightBilinear(ref gridBlob, spawnPos);
-            float3 finalSpawnPos = new float3(spawnPos.x, spawnHeight, spawnPos.z);
-
+            } while (CheckWall(finalSpawnPos, ref gridBlob));
+            
             TransformLookup[entity] = LocalTransform.FromPosition(finalSpawnPos);
 
             PfRequestLookup[entity] = new PFRequestAgent
@@ -145,11 +149,10 @@ namespace Gameplay
                 StartCoord = int2.zero,
                 Destination = int2.zero
             };
-
-            MoveSettingsLookup[entity] = new MoveSettings
-            {
-                Speed = random.NextFloat(2f, 7f)
-            };
+            
+            var moveSettings = MoveSettingsLookup[entity];
+            moveSettings.Speed = random.NextFloat(3f, 10f);
+            MoveSettingsLookup[entity] = moveSettings;
             
             MetaLookup[entity] = new PFRequestMetadata
             {
@@ -157,7 +160,10 @@ namespace Gameplay
                 Priority = 0
             };
         }
+        
+        private bool CheckWall(float3 finalSpawnPos, ref GridBlob gridBlob)
+        {
+           return GridUtils.IsWallAtWorldPos(finalSpawnPos, ref gridBlob);
+        }
     }
-    
-    
 }
