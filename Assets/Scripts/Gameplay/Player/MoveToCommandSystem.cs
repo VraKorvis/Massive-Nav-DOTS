@@ -2,7 +2,6 @@ using Input;
 using Map;
 using PFStar;
 using Unity.Burst;
-using Unity.Collections;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
@@ -16,9 +15,7 @@ namespace Gameplay.Player
     public partial struct MoveToCommandSystem : ISystem
     {
         private ComponentLookup<GridBlobReference> _gridBlobLookup;
-        private ComponentLookup<MoveToCommand> _moveToCommandLookup;
         private ComponentLookup<LocalTransform> _transformLookup;
-        private EntityQuery _commandQuery;
 
         public void OnCreate(ref SystemState state)
         {
@@ -26,72 +23,67 @@ namespace Gameplay.Player
             state.RequireForUpdate<GridTag>();
             state.RequireForUpdate<PlayerTag>();
             _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
-            _moveToCommandLookup = state.GetComponentLookup<MoveToCommand>(false);
             _transformLookup = state.GetComponentLookup<LocalTransform>(true);
-
-            _commandQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<MoveToCommand>()
-                .WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)
-                .Build(ref state);
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
+            state.CompleteDependency();
+
+            if (!SystemAPI.TryGetSingletonEntity<ClickMarkerTag>(out var markerEntity)) return;
+
+            if (!state.EntityManager.IsComponentEnabled<MoveToCommand>(markerEntity)) return;
+
+            var command = state.EntityManager.GetComponentData<MoveToCommand>(markerEntity);
+
             _gridBlobLookup.Update(ref state);
-            _moveToCommandLookup.Update(ref state);
             _transformLookup.Update(ref state);
             var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
             ref var blob = ref _gridBlobLookup[gridEntity].Value.Value;
 
             if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out var playerEntity)) return;
 
-            var ecb = SystemAPI.GetSingleton<EndSimulationEntityCommandBufferSystem.Singleton>()
-                .CreateCommandBuffer(state.WorldUnmanaged);
+            float3 targetPos = command.WorldPosition;
+            int2 rawClickCell = GridUtils.WorldToCellCoord(targetPos, blob.Origin, blob.CellSize);
 
-            state.Dependency.Complete();
-            
-            foreach (var (command, markerEntity) in SystemAPI.Query<RefRO<MoveToCommand>>()
-                         .WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)
-                         .WithEntityAccess())
+            if (GridUtils.IsInBounds(rawClickCell, blob.Dimensions))
             {
-
-                if (!_moveToCommandLookup.IsComponentEnabled(markerEntity)) continue;
-
-                int2 rawClickCell = GridUtils.WorldToCellCoord(command.ValueRO.WorldPosition, blob.Origin, blob.CellSize);
-
-                bool isPathValid = GridUtils.IsInBounds(rawClickCell, blob.Dimensions);
-                if (isPathValid && IsCellWall(rawClickCell, ref blob))
+                float3 playerPos = _transformLookup[playerEntity].Position;
+                if (IsCellWall(rawClickCell, ref blob))
                 {
-                    float3 currentPos = SystemAPI.GetComponent<LocalTransform>(markerEntity).Position;
-                    isPathValid = TryFindWalkable(currentPos, command.ValueRO.WorldPosition, ref blob, blob.Origin,
-                        out rawClickCell);
-                }
-
-                if (isPathValid)
-                {
-                    int2 rawCoord = GridUtils.WorldToCellCoord(_transformLookup[playerEntity].Position, blob.Origin, blob.CellSize);
-                    ecb.SetComponent(playerEntity, new PFRequestAgent
+                    if (!TryFindWalkable(playerPos, targetPos, ref blob, blob.Origin, out var walkableCell))
                     {
-                        Focus = markerEntity,
-                        StartCoord = math.clamp(rawCoord, 0, blob.Dimensions - 1),
-                        Destination = rawClickCell,
-                        NextAllowedUpdateTime = 0
-                    });
-
-                    ecb.SetComponent(playerEntity, new PFAgentState { Flags = (byte)PFAgentStatus.Find });
-                    ecb.SetComponent(playerEntity, new PFRequestMetadata { Priority = 255 });
-
-                    float3 targetWorldPos = GridUtils.CellToWorldCoord(rawClickCell, blob.Origin, blob.CellSize);
-                    ecb.SetComponent(markerEntity, LocalTransform.FromPosition(targetWorldPos));
-                    ecb.SetComponentEnabled<TargetChangedTag>(markerEntity, true);
-                    ecb.SetComponent(markerEntity, new NavigationTargetGridData { CurrentCell = rawClickCell });
-                    ecb.SetComponentEnabled<DynamicTargetTrackingMarkerTag>(playerEntity, false);
+                        return;
+                    }
+                    rawClickCell = walkableCell;
 
                 }
-                _moveToCommandLookup.SetComponentEnabled(markerEntity, false);
 
+                int2 playerCell = GridUtils.WorldToCellCoord(playerPos, blob.Origin, blob.CellSize);
+
+                state.EntityManager.SetComponentData(playerEntity, new PFRequestAgent
+                {
+                    Focus = markerEntity,
+                    Owner = playerEntity,
+                    StartCoord = math.clamp(playerCell, 0, blob.Dimensions - 1),
+                    Destination = rawClickCell
+                });
+                
+                state.EntityManager.SetComponentData(playerEntity, new PFAgentState
+                {
+                    Flags = (byte)PFAgentStatus.Find
+                });
+                
+                state.EntityManager.SetComponentData(playerEntity, new PFRequestMetadata { Priority = 255 });
+                
+                float3 targetWorldPos = GridUtils.CellToWorldCoord(rawClickCell, blob.Origin, blob.CellSize);
+                state.EntityManager.SetComponentData(markerEntity, LocalTransform.FromPosition(targetWorldPos));
+                state.EntityManager.SetComponentData(markerEntity, new NavigationTargetGridData { CurrentCell = rawClickCell });
+                state.EntityManager.SetComponentEnabled<DynamicTargetTrackingMarkerTag>(playerEntity, false);
             }
+            
+            state.EntityManager.SetComponentEnabled<MoveToCommand>(markerEntity, false);
         }
 
         [BurstCompile]
@@ -111,9 +103,9 @@ namespace Gameplay.Player
             for (float step = 0.2f; step < 5f; step += 0.4f)
             {
                 int2 testCell = GridUtils.WorldToCellCoord(to + dir * step, origin, blob.CellSize);
-                
+
                 if (!GridUtils.IsInBounds(testCell, blob.Dimensions)) break;
-                
+
                 if (!IsCellWall(testCell, ref blob))
                 {
                     result = testCell;
