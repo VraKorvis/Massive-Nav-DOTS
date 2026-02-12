@@ -292,8 +292,8 @@ namespace PFStar
 
             if (gridSize > 0 && (!_costSoFar.IsCreated || sizeChanged || limitIncreased))
             {
-                state.Dependency.Complete();
-                if (_costSoFar.IsCreated) DisposeAll();
+                state.CompleteDependency();
+                DisposePathfindingBuffers();
 
                 _currentBufferSize = gridSize;
                 int totalCapacity = (maxPerFrame + VipOffset) * _currentBufferSize;
@@ -713,12 +713,12 @@ namespace PFStar
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {
-            DisposeAll();
+            if (_neighbours.IsCreated) _neighbours.Dispose();
+            DisposePathfindingBuffers();
         }
 
-        private void DisposeAll()
+        private void DisposePathfindingBuffers()
         {
-            if (_neighbours.IsCreated) _neighbours.Dispose();
             if (_costSoFar.IsCreated) _costSoFar.Dispose();
             if (_cameFrom.IsCreated) _cameFrom.Dispose();
             if (_searchVersions.IsCreated) _searchVersions.Dispose();
