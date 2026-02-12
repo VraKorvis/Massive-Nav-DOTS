@@ -1,10 +1,12 @@
 using Map;
 using PFStar;
+using PFStar.Morton;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
+using Unity.Jobs;
 using Unity.Rendering;
 using Unity.Transforms;
 
@@ -14,8 +16,6 @@ namespace OptRenderer
     [BurstCompile]
     public partial struct DensityCullingSystem : ISystem
     {
-        private EntityQuery _agentsQuery;
-
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
@@ -23,10 +23,6 @@ namespace OptRenderer
             state.RequireForUpdate<GridTag>();
             state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridSettings>();
-
-            _agentsQuery = new EntityQueryBuilder(Allocator.Temp)
-                .WithAll<DensityCullingData, VisibilityProperty>()
-                .Build(ref state);
         }
 
         public void OnUpdate(ref SystemState state)
@@ -34,67 +30,40 @@ namespace OptRenderer
             var camera = UnityEngine.Camera.main;
             if (camera == null) return;
 
+            if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
             if (!SystemAPI.TryGetSingleton<CullingSettings>(out var cullingSettings)) return;
+            if (!SystemAPI.TryGetSingleton<SpatialPartitioningData>(out var spatialData)) return;
+
+            if (!spatialData.Initialized || spatialData.AgentCount == 0) return;
 
             if (!cullingSettings.EnableCulling)
             {
                 state.Dependency = new ResetVisibilityJob().ScheduleParallel(state.Dependency);
                 return;
             }
-
-            int totalAntsCount = _agentsQuery.CalculateEntityCount();
-
-            if (totalAntsCount == 0) return;
-
-            var gridSettings = SystemAPI.GetSingleton<GridSettings>();
-            int gridSize = gridSettings.Dimensions.x * gridSettings.Dimensions.y;
-
-            var gridCount = new NativeArray<int>(gridSize, Allocator.TempJob);
-
-            var countJob = new CountAntsJob
-            {
-                GridSettings = gridSettings,
-                GridCount = gridCount
-            }.ScheduleParallel(state.Dependency);
+            
+            var readyMorton = spatialData.IsBufferA ? spatialData.MortonA : spatialData.MortonB;
+            var readyCellStarts = spatialData.IsBufferA ? spatialData.CellStartsA : spatialData.CellStartsB;
+            var readyHandle = spatialData.IsBufferA ? spatialData.HandleA : spatialData.HandleB;
+            
+            var jobDeps = JobHandle.CombineDependencies(state.Dependency, readyHandle);
 
             var agentSpareCullingJob = new CombinedCullingJob
             {
                 CameraPos = camera.transform.position,
-                GridSettings = gridSettings,
-                GridCount = gridCount,
-                TotalAntsCount = totalAntsCount,
+                CellSize = navSettings.SpatialCellSize,
+                SortedEntries = readyMorton,
+                CellStarts = readyCellStarts,
+                TotalAntsCount = spatialData.AgentCount,
                 GlobalThreshold = cullingSettings.GlobalThreshold,
                 MaxAntsPerCell = cullingSettings.MaxAntsPerCell,
                 SafeDistanceSq = cullingSettings.SafeDistance * cullingSettings.SafeDistance,
                 DeltaTime = SystemAPI.Time.DeltaTime,
                 FadeSpeed = cullingSettings.FadeSpeed,
-            }.ScheduleParallel(countJob);
+            }.ScheduleParallel(jobDeps);
 
             state.Dependency = agentSpareCullingJob;
 
-            gridCount.Dispose(state.Dependency);
-        }
-
-        [BurstCompile]
-        [WithAll(typeof(DensityCullingData))]
-        public unsafe partial struct CountAntsJob : IJobEntity
-        {
-            public GridSettings GridSettings;
-
-            [NativeDisableParallelForRestriction] public NativeArray<int> GridCount;
-
-            void Execute(in LocalTransform transform)
-            {
-                int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
-
-                if (GridUtils.IsInBounds(coord, GridSettings.Dimensions))
-
-                {
-                    int index = GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x);
-
-                    System.Threading.Interlocked.Increment(ref ((int*)GridCount.GetUnsafePtr())[index]);
-                }
-            }
         }
 
         [BurstCompile]
@@ -103,10 +72,10 @@ namespace OptRenderer
         // [WithPresent(typeof(MaterialMeshInfo))]
         public partial struct ResetVisibilityJob : IJobEntity
         {
-            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled)
-            {
+            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref VisibilityProperty shaderProp)            {
                 mmiEnabled.ValueRW = true;
-            }
+                cullingData.Visibility = 1.0f;
+                shaderProp.Value = 1.0f;            }
         }
 
         [BurstCompile]
@@ -114,42 +83,48 @@ namespace OptRenderer
         [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
         public partial struct CombinedCullingJob : IJobEntity
         {
+            [ReadOnly]
+            public NativeArray<MortonEntry> SortedEntries;
+            [ReadOnly]
+            public NativeArray<int> CellStarts;
+
             public float3 CameraPos;
-            public GridSettings GridSettings;
-            [ReadOnly] public NativeArray<int> GridCount;
+            public float CellSize;
             public int TotalAntsCount;
             public int GlobalThreshold;
             public int MaxAntsPerCell;
             public float SafeDistanceSq;
             public float DeltaTime;
-            public float FadeSpeed; 
-            
+            public float FadeSpeed;
+
             private void Execute(Entity entity, EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref VisibilityProperty shaderProp, in LocalTransform transform)
             {
                 float distSq = math.distancesq(transform.Position, CameraPos);
+                bool shouldBeVisible = true;
 
-                bool shouldBeVisible;
-
-                if (distSq < SafeDistanceSq)
+                if (distSq >= SafeDistanceSq && TotalAntsCount >= GlobalThreshold)
                 {
-                    shouldBeVisible = true;
-                }
-                else if (TotalAntsCount < GlobalThreshold)
-                {
-                    shouldBeVisible = true;
-                }
-                else
-                {
-                    int2 coord = GridUtils.WorldToCellCoord(transform.Position, GridSettings.Origin, GridSettings.CellSize);
+                    uint code = MortonUtils.GetMorton2D(transform.Position, CellSize);
                     int density = 0;
-                    if (GridUtils.IsInBounds(coord, GridSettings.Dimensions))
+
+                    if (code < CellStarts.Length)
                     {
-                        density = GridCount[GridUtils.CoordToIndex(coord, GridSettings.Dimensions.x)];
+                        int startIdx = CellStarts[(int)code];
+                        if (startIdx != -1)
+                        {
+                            int endIdx = startIdx + 1;
+                            while (endIdx < TotalAntsCount && SortedEntries[endIdx].Key == code)
+                            {
+                                endIdx++;
+
+                                if (endIdx - startIdx > MaxAntsPerCell * 2) break;
+                            }
+                            density = endIdx - startIdx;
+                        }
                     }
 
                     float survivalChance = math.saturate((float)MaxAntsPerCell / math.max(density, 1));
                     float entityHash = (float)((entity.Index * 0.61803398875f) % 1.0);
-
                     shouldBeVisible = entityHash <= survivalChance;
                 }
 
