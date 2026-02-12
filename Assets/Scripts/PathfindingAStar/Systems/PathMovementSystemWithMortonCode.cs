@@ -114,8 +114,7 @@ namespace PFStar
 
                 float3 targetPos = way[^1].point;
                 targetPos.y = GridUtils.GetHeightBilinear(ref grid, targetPos);
-
-
+                
                 // PBD + steering
                 float3 pbdDisplacement = float3.zero;
 
@@ -133,7 +132,6 @@ namespace PFStar
                             pbdDisplacement += CheckNeighbors(startIdx, -1, pos, checkRadiusSq);
                         }
                     }
-
                 }
 
                 float3 toTarget = targetPos - pos;
@@ -145,12 +143,17 @@ namespace PFStar
                 if (math.lengthsq(wallPush) > 0.01f)
                 {
                     float3 wallNormal = math.normalize(wallPush);
+                    
                     float dot = math.dot(desiredDir, -wallNormal);
-                    if (dot > 0)
+                    if (dot < 0)
                     {
-                        desiredDir = math.normalize(desiredDir + wallNormal * dot);
+                        desiredDir -= wallNormal * dot;
+                        float3 tangent = new float3(-wallNormal.z, 0, wallNormal.x);
+                        if (math.dot(tangent, desiredDir) < 0) tangent = -tangent;
+                        desiredDir = math.normalize(desiredDir + tangent * 0.5f);
                     }
-                    desiredDir = math.normalize(desiredDir + wallNormal * 0.5f);
+                    desiredDir = math.normalize(desiredDir + wallNormal * 0.1f);
+                    
                 }
 
                 float3 steering = desiredDir;
