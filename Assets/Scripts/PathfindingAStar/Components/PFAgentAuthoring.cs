@@ -94,6 +94,8 @@ Binary      Decimal   Flags set
         }
     }
 
+    public struct PathfindingHighPriorityTag : IComponentData { }
+    
     public struct PFRequestAgent : IComponentData
     {
         public Entity Focus;

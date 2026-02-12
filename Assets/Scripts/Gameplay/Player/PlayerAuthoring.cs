@@ -48,6 +48,8 @@ namespace Gameplay.Player
                 });
                 
                 AddComponent(entity, new DynamicTargetTrackingMarkerTag());
+                SetComponentEnabled<DynamicTargetTrackingMarkerTag>(entity, false);
+                AddComponent(entity, new PathfindingHighPriorityTag());
 
                
             }

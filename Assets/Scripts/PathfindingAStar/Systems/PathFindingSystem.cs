@@ -179,10 +179,10 @@ namespace PFStar
         private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new("[PF] Player.Pathfinding.Scheduling");
 #endif
 
-        private const int VipOffset = 1;
         private const int VipIterationLimit = 10000;
 
         private EntityQuery _playerQuery;
+        private EntityQuery _highPriorityPfQuery;
         private EntityQuery _pathRequestQuery;
         private EntityQuery _gridQuery;
 
@@ -222,6 +222,11 @@ namespace PFStar
                 .WithAllRW<PFRequestMetadata>()
                 .WithAll<PFAgentState>()
                 .WithAll<PlayerTag>()
+                .Build(ref state);
+            
+            _highPriorityPfQuery = new EntityQueryBuilder(Allocator.Temp)
+                .WithAll<PFRequestAgent>()
+                .WithAll<PathfindingHighPriorityTag>()
                 .Build(ref state);
 
             _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
@@ -285,7 +290,9 @@ namespace PFStar
             int targetJitterRange = navSettings.TargetJitterRange;
             int gridSize = dimX * dimY;
 
-            int currentPhysicalLimit = _costSoFar.IsCreated ? (_costSoFar.Length / _currentBufferSize) - VipOffset : -1;
+            int vipOffset = _highPriorityPfQuery.CalculateEntityCount();
+
+            int currentPhysicalLimit = _costSoFar.IsCreated ? (_costSoFar.Length / _currentBufferSize) - vipOffset : -1;
 
             bool sizeChanged = gridSize != _currentBufferSize;
             bool limitIncreased = maxPerFrame > currentPhysicalLimit;
@@ -296,7 +303,7 @@ namespace PFStar
                 DisposePathfindingBuffers();
 
                 _currentBufferSize = gridSize;
-                int totalCapacity = (maxPerFrame + VipOffset) * _currentBufferSize;
+                int totalCapacity = (maxPerFrame + vipOffset) * _currentBufferSize;
 
                 _searchVersions = new NativeArray<uint>(totalCapacity, Allocator.Persistent);
                 _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
@@ -304,7 +311,7 @@ namespace PFStar
                 _openSet = new NativeBinaryMinHeap(totalCapacity, Allocator.Persistent);
             }
 
-            uint uniqueSearchID = state.GlobalSystemVersion * (uint)(maxPerFrame + VipOffset + 1);
+            uint uniqueSearchID = state.GlobalSystemVersion * (uint)(maxPerFrame + vipOffset + 1);
 
 #if UNITY_EDITOR
             using (k_ProfilePlayerPathLogic.Auto())
@@ -361,7 +368,7 @@ namespace PFStar
                 SortableList = sortableList.AsParallelWriter()
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
 
-            int physicalLimit = (_costSoFar.Length / _currentBufferSize) - VipOffset;
+            int physicalLimit = (_costSoFar.Length / _currentBufferSize) - vipOffset;
             int agentsToProcess = math.min(totalWaiting, math.min(maxPerFrame, physicalLimit));
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
@@ -390,7 +397,7 @@ namespace PFStar
 
             var findHandle = new FindPathAStarJob
             {
-                Offset = VipOffset,
+                Offset = vipOffset,
                 GridBlob = gridBlobRef,
                 Dimensions = dimensions,
                 CurrentFrame = Time.frameCount,
