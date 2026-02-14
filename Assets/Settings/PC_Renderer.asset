@@ -26,7 +26,8 @@ MonoBehaviour:
     probeVolumeBlendStatesCS: {fileID: 7200000, guid: b9a23f869c4fd45f19c5ada54dd82176, type: 3}
   m_RendererFeatures:
   - {fileID: 7833122117494664109}
-  m_RendererFeatureMap: ad6b866f10d7b46c
+  - {fileID: 8814455987826607866}
+  m_RendererFeatureMap: ad6b866f10d7b46cfa46b81a053d537a
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -75,9 +76,28 @@ MonoBehaviour:
     Source: 1
     NormalSamples: 1
     Intensity: 0.4
-    DirectLightingStrength: 0.25
+    DirectLightingStrength: 0.562
     Radius: 0.3
     Samples: 1
-    BlurQuality: 0
+    BlurQuality: 2
     Falloff: 100
     SampleCount: -1
+--- !u!114 &8814455987826607866
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: cc0e931314024856a159caae43960d61, type: 3}
+  m_Name: PheromoneFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Rendering.Pheromones.PheromoneFeature
+  m_Active: 1
+  Settings:
+    ComputeShader: {fileID: 7200000, guid: 28bb9cfbea40c425c806863447e8730d, type: 3}
+    TextureSize: 1024
+    RenderEvent: 250
+    WorldSize: {x: 200, y: 200}
+    WorldOffset: {x: 0, y: 0, z: 0}

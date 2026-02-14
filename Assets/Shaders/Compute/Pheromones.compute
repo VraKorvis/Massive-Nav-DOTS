@@ -1,0 +1,40 @@
+#pragma kernel DrawPheromones
+#pragma kernel Evaporate
+
+StructuredBuffer<float4> _AgentPositions;
+int _AgentCount;
+RWTexture2D<float> _PheromoneMap;
+
+float4 _WorldParams; // x,y: Size, z,w: Offset
+int _TexSize;
+
+[numthreads(64,1,1)]
+void DrawPheromones(uint3 id : SV_DispatchThreadID)
+{
+    if ((int)id.x >= _AgentCount) return;
+
+    float4 data = _AgentPositions[id.x];
+    float3 pos = data.xyz;
+    float visibility = data.w;
+    if (visibility <= 0.05) return;
+    
+    float2 uv = (pos.xz - _WorldParams.zw) / _WorldParams.xy;
+    int2 pixelCoords = int2(uv * _TexSize);
+
+    if (pixelCoords.x < 0 || pixelCoords.x >= _TexSize || pixelCoords.y < 0 || pixelCoords.y >= _TexSize)
+        return;
+
+    _PheromoneMap[pixelCoords] = saturate(_PheromoneMap[pixelCoords] + 0.05);
+}
+
+float _EvaporationSpeed;
+
+[numthreads(8,8,1)]
+void Evaporate(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= (uint)_TexSize || id.y >= (uint)_TexSize) return;
+
+    float val = _PheromoneMap[id.xy];
+
+    _PheromoneMap[id.xy] = saturate(val - _EvaporationSpeed);
+}
