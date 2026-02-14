@@ -1,6 +1,6 @@
 using System.Runtime.CompilerServices;
-using Map;
-using PFStar;
+using Core.PathfindingAStar;
+using Map.Grid;
 using Unity.Burst;
 using Unity.Entities;
 using Unity.Mathematics;

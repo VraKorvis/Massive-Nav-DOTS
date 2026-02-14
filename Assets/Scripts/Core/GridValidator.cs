@@ -1,5 +1,4 @@
-using Map;
-using PFStar;
+using Map.Grid;
 using UnityEngine;
 
 namespace Core
