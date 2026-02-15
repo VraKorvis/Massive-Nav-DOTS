@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Unity.Entities;
 using Unity.Rendering;
 
@@ -14,10 +15,10 @@ namespace Features.OptRenderer
     /// - Property type: Float
     /// - "Hybrid Instancing" must be enabled in the shader property settings.
     /// </remarks>
+    [StructLayout(LayoutKind.Sequential, Size = 4)]
     [MaterialProperty("_AgentEffect")] 
-    public struct AgentVisualParams : IComponentData, IEnableableComponent
+    public struct GpuAgentVisualParams : IComponentData
     {
-        public float EffectValue;
-        public int OrderInCell;
+        public float Value;
     }
 }

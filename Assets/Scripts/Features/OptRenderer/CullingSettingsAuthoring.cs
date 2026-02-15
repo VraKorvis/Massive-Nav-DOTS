@@ -14,11 +14,11 @@ namespace Features.OptRenderer
     
     public class CullingSettingsAuthoring : MonoBehaviour
     {
-        public int globalThreshold = 50000;
-        public int maxAgentsPerCell = 100;
-        public float safeDistance = 15f;
-        public float fadeSpeed = 5f;
-        public bool enableCulling = true;
+        public int GlobalThreshold = 50000;
+        public int MaxAgentsPerCell = 100;
+        public float SafeDistance = 15f;
+        public float FadeSpeed = 5f;
+        public bool EnableCulling = false;
 
         public class Baker : Baker<CullingSettingsAuthoring>
         {
@@ -27,11 +27,11 @@ namespace Features.OptRenderer
                 var entity = GetEntity(TransformUsageFlags.None);
                 AddComponent(entity, new CullingSettings
                 {
-                    GlobalThreshold = authoring.globalThreshold,
-                    MaxAntsPerCell = authoring.maxAgentsPerCell,
-                    EnableCulling = authoring.enableCulling,
-                    SafeDistance = authoring.safeDistance,
-                    FadeSpeed = authoring.fadeSpeed,
+                    GlobalThreshold = authoring.GlobalThreshold,
+                    MaxAntsPerCell = authoring.MaxAgentsPerCell,
+                    EnableCulling = authoring.EnableCulling,
+                    SafeDistance = authoring.SafeDistance,
+                    FadeSpeed = authoring.FadeSpeed,
                 });
             }
         }

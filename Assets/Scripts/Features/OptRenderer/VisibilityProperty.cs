@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using Unity.Entities;
 using Unity.Rendering;
 
@@ -13,8 +14,9 @@ namespace Features.OptRenderer
     /// - Property type: Float
     /// - "Hybrid Instancing" must be enabled in the shader property settings.
     /// </remarks>
+    [StructLayout(LayoutKind.Sequential, Size = 4)]
     [MaterialProperty("_Visibility")]
-    public struct VisibilityProperty : IComponentData
+    public struct GpuVisibilityProperty : IComponentData
     {
         /// <summary>
         /// Represents the alpha/opacity value of the agent.

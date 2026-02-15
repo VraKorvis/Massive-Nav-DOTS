@@ -66,19 +66,22 @@ namespace Features.OptRenderer
         }
 
         [BurstCompile]
-        [WithAll(typeof(DensityCullingData))]
+        [WithAll(typeof(DensityCullingData), typeof(GpuVisibilityProperty))]
         [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
         // [WithPresent(typeof(MaterialMeshInfo))]
         public partial struct ResetVisibilityJob : IJobEntity
         {
-            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref VisibilityProperty shaderProp)            {
+            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref GpuVisibilityProperty shaderProp)  
+            {
                 mmiEnabled.ValueRW = true;
                 cullingData.Visibility = 1.0f;
-                shaderProp.Value = 1.0f;            }
+                cullingData.ShouldBeVisible = true;
+                shaderProp.Value = 1.0f;
+            }
         }
 
         [BurstCompile]
-        [WithAll(typeof(DensityCullingData), typeof(VisibilityProperty))]
+        [WithAll(typeof(DensityCullingData), typeof(GpuVisibilityProperty))]
         [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
         public partial struct CombinedCullingJob : IJobEntity
         {
@@ -96,7 +99,7 @@ namespace Features.OptRenderer
             public float DeltaTime;
             public float FadeSpeed;
 
-            private void Execute(Entity entity, EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref VisibilityProperty shaderProp, in LocalTransform transform)
+            private void Execute(Entity entity, EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref GpuVisibilityProperty shaderProp, in LocalTransform transform)
             {
                 float distSq = math.distancesq(transform.Position, CameraPos);
                 bool shouldBeVisible = true;

@@ -127,11 +127,7 @@ Binary      Decimal   Flags set
                 {
                     Flags = (byte)PFAgentStatus.Significant
                 });
-
-                AddComponent(entity, new AgentVisualParams { EffectValue = 1f });
-                AddComponent(entity, new DensityCullingData());
-                AddComponent(entity, new VisibilityProperty());
-
+                
                 AddBuffer<Waypoint>(entity);
             }
         }
