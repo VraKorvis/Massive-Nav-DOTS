@@ -43,7 +43,9 @@ Material:
     m_TexEnvs: []
     m_Ints: []
     m_Floats:
+    - _CastShadows: 0
     - _QueueControl: 0
+    - _ReceiveShadows: 0
     - _WorkflowMode: 0
     m_Colors: []
   m_BuildTextureStacks: []

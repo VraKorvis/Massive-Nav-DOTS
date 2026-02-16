@@ -6,19 +6,20 @@ using UnityEngine;
 
 namespace Core.Camera
 {
-    [UpdateInGroup(typeof(TransformSystemGroup))]
-    [UpdateAfter(typeof(LocalToWorldSystem))] 
+    [UpdateInGroup(typeof(PresentationSystemGroup), OrderLast = true)]
     public partial class CameraFollowSystem : SystemBase
     {
         protected override void OnUpdate()
         {
-            Dependency.Complete(); 
-
+            
             if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out Entity player)) return;
 
-            var ltw = EntityManager.GetComponentData<LocalToWorld>(player);
-            float3 targetPos = ltw.Position;
-
+            Dependency.Complete();
+            var ltwLookup = SystemAPI.GetComponentLookup<LocalToWorld>(true);
+            
+            if (!ltwLookup.HasComponent(player)) return;
+            float3 targetPos = ltwLookup[player].Position;
+            
             if (SystemAPI.ManagedAPI.TryGetSingleton<MainCameraTag>(out var cameraTag))
             {
                 if (cameraTag.CameraTransform == null) return;

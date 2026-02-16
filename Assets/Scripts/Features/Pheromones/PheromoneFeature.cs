@@ -5,6 +5,9 @@ namespace Features.Pheromones
 {
     public class PheromoneFeature : ScriptableRendererFeature
     {
+        public PheromoneSettings Settings = new PheromoneSettings();
+        private PheromonePass _pheromonePass;
+        
         [System.Serializable]
         public class PheromoneSettings
         {
@@ -17,10 +20,7 @@ namespace Features.Pheromones
             public Vector2 WorldSize = new Vector2(200, 200);
             public Vector3 WorldOffset = Vector3.zero;
         }
-
-        public PheromoneSettings Settings = new PheromoneSettings();
-        private PheromonePass _pheromonePass;
-
+        
         public override void Create()
         {
             _pheromonePass = new PheromonePass(Settings, Settings.ComputeShader, Settings.TextureSize)

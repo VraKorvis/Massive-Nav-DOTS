@@ -186,7 +186,7 @@ namespace Core.PathfindingAStar
         private EntityQuery _pathRequestQuery;
         private EntityQuery _gridQuery;
 
-        private NativeArray<int2> _neighbours;
+        [ReadOnly] private NativeArray<int2> _neighbours;
         private NativeArray<float> _costSoFar;
         private NativeArray<uint> _searchVersions;
         private NativeArray<int2> _cameFrom;
@@ -319,7 +319,6 @@ namespace Core.PathfindingAStar
 #endif
                 if (!_playerQuery.IsEmpty)
                 {
-                    state.Dependency.Complete();
                     var playerEntity = _playerQuery.GetSingletonEntity();
                     var playerState = SystemAPI.GetComponent<PFAgentState>(playerEntity);
                     if (SystemAPI.HasComponent<PFRequestAgent>(playerEntity) &&
@@ -344,7 +343,6 @@ namespace Core.PathfindingAStar
                             Waypoints = _waypointLookup[playerEntity],
                             GridBlob = gridBlobRef,
                             Dimensions = dimensions,
-                            GridSize = gridSize,
                             Neighbours = _neighbours,
                             AgentStateLookup = _agentStateLookup,
                             UniqueSearchID = uniqueSearchID
@@ -400,7 +398,6 @@ namespace Core.PathfindingAStar
                 Offset = vipOffset,
                 GridBlob = gridBlobRef,
                 Dimensions = dimensions,
-                CurrentFrame = Time.frameCount,
                 GreedyCoef = navSettings.GreedyCoef,
                 IterationLimit = navSettings.IterationLimit,
 
@@ -433,7 +430,7 @@ namespace Core.PathfindingAStar
         {
             public int VipIterationLimit;
 
-            public BlobAssetReference<GridBlob> GridBlob;
+            [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
 
             public int2 Dimensions;
 
@@ -453,7 +450,6 @@ namespace Core.PathfindingAStar
             public Entity PlayerEntity;
             [ReadOnly]
             public NativeArray<int2> Neighbours;
-            public int GridSize;
             public uint UniqueSearchID;
 
             public void Execute()
@@ -616,9 +612,7 @@ namespace Core.PathfindingAStar
 
             public float GreedyCoef;
             public int IterationLimit;
-
-            public int CurrentFrame;
-
+            
             [ReadOnly]
             public BlobAssetReference<GridBlob> GridBlob;
             [NativeDisableParallelForRestriction]

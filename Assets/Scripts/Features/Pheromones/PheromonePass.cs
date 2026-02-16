@@ -1,9 +1,4 @@
-using Core.Gameplay;
-using Features.OptRenderer;
-using Unity.Collections;
 using Unity.Entities;
-using Unity.Mathematics;
-using Unity.Transforms;
 using UnityEngine;
 using UnityEngine.Rendering;
 using UnityEngine.Rendering.RenderGraphModule;
@@ -14,12 +9,10 @@ namespace Features.Pheromones
     public class PheromonePass : ScriptableRenderPass
     {
         private readonly PheromoneFeature.PheromoneSettings _settings;
-        private EntityQuery _agentQuery;
 
         private readonly ComputeShader _computeShader;
         private static readonly int PheromoneMapPropertyId = Shader.PropertyToID("_PheromoneMap");
         
-        private GraphicsBuffer _buffer;
         private RTHandle _pheromoneMap;
         
         private readonly int _textureSize;
@@ -45,51 +38,31 @@ namespace Features.Pheromones
         {
             if (_computeShader == null) return;
             
-            
             _pheromoneMap ??= RTHandles.Alloc(
                 _textureSize, _textureSize,
                 colorFormat: UnityEngine.Experimental.Rendering.GraphicsFormat.R32_SFloat,
                 enableRandomWrite: true,
+                filterMode : FilterMode.Bilinear,
                 name: "_PheromoneMap"
             );
             
             TextureHandle pheromoneTextureHandle = renderGraph.ImportTexture(_pheromoneMap);
 
             var world = World.DefaultGameObjectInjectionWorld;
-            if (world == null || !world.IsCreated) return;
+            if (world == null) return;
 
-            if (_agentQuery == default) _agentQuery = world.EntityManager.CreateEntityQuery(typeof(DensityCullingData), typeof(MinionTag), typeof(LocalTransform));
-            
-            _agentQuery.CompleteDependency();
+            var systemHandle = world.GetExistingSystem<PreparePheromoneBufferSystem>();
+            if (systemHandle == SystemHandle.Null) return;
 
-            int count = _agentQuery.CalculateEntityCount();
+            var bufferRef = world.EntityManager.GetComponentData<PheromoneBufferReference>(systemHandle);
+            if (bufferRef.GpuBuffer == null || bufferRef.ActualCount <= 0) return;
 
-            int bufferCount = Mathf.Max(1, count); 
-            if (_buffer == null || _buffer.count != bufferCount)
-            {
-                _buffer?.Release();
-                _buffer = new GraphicsBuffer(GraphicsBuffer.Target.Structured, bufferCount, sizeof(float) * 4);
-            }
-            
-            if (count > 0)
-            {
-                var transforms = _agentQuery.ToComponentDataArray<LocalTransform>(Allocator.Temp);
-                var cullingDatas = _agentQuery.ToComponentDataArray<DensityCullingData>(Allocator.Temp);
-            
-                NativeArray<float4> positions = new NativeArray<float4>(count, Allocator.Temp);
-
-                for (int i = 0; i < count; i++)
-                {
-                    positions[i] = new float4(transforms[i].Position, cullingDatas[i].Visibility);
-                }
-
-                _buffer.SetData(positions);
-            }
+            bufferRef.GpuBuffer.SetData(bufferRef.CpuData, 0, 0, bufferRef.ActualCount);
             
             using var builder = renderGraph.AddComputePass("PheromoneUpdatePass", out PheromonePassData passData);
             
-            passData.AgentPositions = _buffer;
-            passData.AgentCount = count;
+            passData.AgentPositions = bufferRef.GpuBuffer;
+            passData.AgentCount = bufferRef.ActualCount;
             passData.OutputTexture = pheromoneTextureHandle;
             passData.Compute = _computeShader;
            
@@ -109,34 +82,30 @@ namespace Features.Pheromones
                 
                 cmd.SetComputeIntParam(pData.Compute, "_TexSize", pData.TexSize);
 
-                int evaporateKernel = pData.Compute.FindKernel("Evaporate");
-                cmd.SetComputeFloatParam(pData.Compute, "_EvaporationSpeed", 0.001f); 
+                cmd.SetComputeFloatParam(pData.Compute, "_EvaporationSpeed", 0.1f); 
+                cmd.SetComputeFloatParam(pData.Compute, "_DeltaTime", Time.deltaTime); 
+                cmd.SetComputeIntParam(pData.Compute, "_AgentCount", pData.AgentCount);
+                cmd.SetComputeVectorParam(pData.Compute, "_WorldParams", pData.WorldParams);
                 
+                int evaporateKernel = pData.Compute.FindKernel("Evaporate");
                 cmd.SetComputeTextureParam(pData.Compute, evaporateKernel, "_PheromoneMap", pData.OutputTexture);
     
                 int groups = Mathf.CeilToInt(pData.TexSize / 8.0f);
                 cmd.DispatchCompute(pData.Compute, evaporateKernel, groups, groups, 1);
                 
-                int kernel = pData.Compute.FindKernel("DrawPheromones");
+                int drawKernel = pData.Compute.FindKernel("DrawPheromones");
 
-                cmd.SetComputeBufferParam(pData.Compute, kernel, "_AgentPositions", pData.AgentPositions);
-                cmd.SetComputeIntParam(pData.Compute, "_AgentCount", pData.AgentCount);
-                cmd.SetComputeVectorParam(pData.Compute, "_WorldParams", pData.WorldParams);
-                
-                cmd.SetComputeTextureParam(pData.Compute, kernel, "_PheromoneMap", pData.OutputTexture);
-                
+                cmd.SetComputeBufferParam(pData.Compute, drawKernel, "_AgentPositions", pData.AgentPositions);
+                cmd.SetComputeTextureParam(pData.Compute, drawKernel, "_PheromoneMap", pData.OutputTexture);
                 int threadGroups = Mathf.Max(1, Mathf.CeilToInt(pData.AgentCount / 64.0f));
-                cmd.DispatchCompute(pData.Compute, kernel, threadGroups, 1, 1);
+                cmd.DispatchCompute(pData.Compute, drawKernel, threadGroups, 1, 1);
 
                 cmd.SetGlobalTexture(PheromoneMapPropertyId, pData.OutputTexture);
             });
-            
         }
         
         public void Cleanup()
         {
-            _buffer?.Release();
-            _buffer = null;
             _pheromoneMap?.Release();
             _pheromoneMap = null;
         }

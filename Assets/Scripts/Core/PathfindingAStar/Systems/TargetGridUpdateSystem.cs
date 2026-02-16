@@ -3,7 +3,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 
-namespace Core.PathfindingAStar.Systems
+namespace Core.PathfindingAStar
 {
     [UpdateInGroup(typeof(InitializationSystemGroup))]
     [BurstCompile]
