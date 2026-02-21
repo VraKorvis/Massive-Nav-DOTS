@@ -13,7 +13,6 @@ public static class GridUtils
 
     /// <summary>
     /// Get Cell index
-    /// Example, for 3х3 maze:
     /// index   coord
     /// 0 -     [0,0]
     /// 1 -     [1,0]
@@ -180,6 +179,35 @@ public static class GridUtils
         if (float.IsInfinity(grid.Weights[i11])) h11 = h00;
 
         return math.lerp(math.lerp(h00, h10, t.x), math.lerp(h01, h11, t.x), t.y);
+    }
+
+    [MethodImpl(MethodImplOptions.AggressiveInlining)]
+
+    public static float3 GetWallPushBilinear(ref GridBlob grid, float3 worldPos)
+    {
+        float2 localPos = (worldPos.xz - grid.Origin.xz) / grid.CellSize - 0.5f;
+
+        int x = (int)math.floor(localPos.x);
+        int y = (int)math.floor(localPos.y);
+
+        int x0 = math.clamp(x, 0, grid.Dimensions.x - 1);
+        int x1 = math.clamp(x + 1, 0, grid.Dimensions.x - 1);
+        int y0 = math.clamp(y, 0, grid.Dimensions.y - 1);
+        int y1 = math.clamp(y + 1, 0, grid.Dimensions.y - 1);
+
+        float2 t = localPos - math.floor(localPos);
+        int width = grid.Dimensions.x;
+
+        float3 v00 = grid.WallPushField[y0 * width + x0];
+        float3 v10 = grid.WallPushField[y0 * width + x1];
+        float3 v01 = grid.WallPushField[y1 * width + x0];
+        float3 v11 = grid.WallPushField[y1 * width + x1];
+
+        return math.lerp(
+            math.lerp(v00, v10, t.x), 
+            math.lerp(v01, v11, t.x), 
+            t.y
+        );
     }
 
     [MethodImpl(MethodImplOptions.AggressiveInlining)]

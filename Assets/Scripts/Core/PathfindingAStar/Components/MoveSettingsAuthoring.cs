@@ -9,12 +9,16 @@ namespace Core.PathfindingAStar
     {
         public float Speed;
         public float3 Velocity;
+        public float3 LookDir;
+        
         public float StartDelay;
         public float3 TargetCellPos;
         
         public float PivotOffset;
         public float RotSpeed;
         public float Acceleration;
+        public float MinSlopeMul;
+        public float MaxSlopeMul;
         public float MinSpeedMul;
         public float MaxSpeedMul;
         public float VerticalSmoothSpeed;
@@ -30,7 +34,9 @@ namespace Core.PathfindingAStar
 
         [Tooltip("Delay before character can start to move. Helps to avoid 'jitter' on rapid path changes.")]
         [Range(0f, 2f)] public float StartDelay = 0.1f;
-        
+
+        public float3 LookDir;
+
         [Header("Physics & Feeling")]
         [Tooltip("Height Offset")]
         public float PivotOffset;
@@ -42,10 +48,14 @@ namespace Core.PathfindingAStar
         public float Acceleration = 12f;
 
         [Header("Terrain Interaction")]
+        [Tooltip("Minimum speed multiplier when climbing the steepest slope (e.g., 0.2 = 20% of base speed).")]
+        public float MinSlopeMul = 0.2f;
+        [Tooltip("Maximum speed multiplier when moving down a slope (e.g., 1.2 = 20% speed boost).")]
+        public float MaxSlopeMul = 1.2f;
         [Tooltip("Multiplier for speed on difficult terrain (high weights in Grid).")]
-        public float MinSpeedMul = 0.7f;
+        public float MinSpeedMul = 0.5f;
         [Tooltip("Multiplier for speed on 'fast' terrain (low weights in Grid).")]
-        public float MaxSpeedMul = 2.0f;
+        public float MaxSpeedMul = 1.5f;
 
         [Tooltip("Speed of height adjustment. Prevents snapping when walking on bumpy surfaces.")]
         public float VerticalSmoothSpeed = 6f;
@@ -71,6 +81,8 @@ namespace Core.PathfindingAStar
                     RotSpeed = authoring.RotSpeed,
                     TargetCellPos     = authoring.transform.position,
                     Acceleration = authoring.Acceleration,
+                    MinSlopeMul = authoring.MinSlopeMul,
+                    MaxSlopeMul = authoring.MaxSlopeMul,
                     MinSpeedMul = authoring.MinSpeedMul,
                     MaxSpeedMul = authoring.MaxSpeedMul,
                     VerticalSmoothSpeed = authoring.VerticalSmoothSpeed,

@@ -152,6 +152,7 @@ namespace Core.Gameplay
             var moveSettings = MoveSettingsLookup[entity];
             moveSettings.Speed = random.NextFloat(3f, 10f);
             moveSettings.PivotOffset = 0.5f;
+            moveSettings.LookDir = TransformLookup[entity].Forward();
             MoveSettingsLookup[entity] = moveSettings;
             
             MetaLookup[entity] = new PFRequestMetadata

@@ -15,25 +15,22 @@ namespace Core.PathfindingAStar
     [BurstCompile]
     public partial struct PathMovementSystem : ISystem
     {
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridTag>();
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>();
         }
 
         [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            _gridBlobLookup.Update(ref state);
-            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
-            
+            var gridBlobRef = SystemAPI.GetSingleton<GridBlobReference>().Value;
+
             var moveJob = new PathMoveJob
             {
                 GridBlob = gridBlobRef,
-                DeltaTime = SystemAPI.Time.DeltaTime,
+                DeltaTime = state.WorldUnmanaged.Time.DeltaTime,
             };
             state.Dependency = moveJob.ScheduleParallel(state.Dependency);
         }
@@ -44,7 +41,7 @@ namespace Core.PathfindingAStar
             public float DeltaTime;
             [ReadOnly]
             public BlobAssetReference<GridBlob> GridBlob;
-            
+
             private void Execute(
                 ref DynamicBuffer<Waypoint> way,
                 ref MoveSettings moveData,
@@ -52,13 +49,13 @@ namespace Core.PathfindingAStar
                 ref PFAgentState agentState,
                 in PlayerTag playerTag)
             {
-                
+
                 ref var grid = ref GridBlob.Value;
 
                 float3 pos = transform.Position;
                 float baseRadius = math.max(0.05f, grid.CellSize * moveData.ArrivalRadiusFactor);
                 float arrivalRadius = (way.Length == 1) ? 0.05f : baseRadius;
-                
+
                 if (!TrimReachedWaypoints(way, pos, arrivalRadius))
                 {
                     StopAgent(ref agentState, ref moveData);
@@ -68,17 +65,17 @@ namespace Core.PathfindingAStar
                 var groundHeight = GridUtils.GetHeightBilinear(ref grid, pos);
                 pos.y = groundHeight + moveData.PivotOffset;
                 transform.Position.y = pos.y;
-                
+
                 float3 targetPos = way[^1].point;
                 targetPos.y = GridUtils.GetHeightBilinear(ref grid, targetPos);
-                
+
                 float3 moveDirXZ = math.normalize(new float3(targetPos.x - pos.x, 0, targetPos.z - pos.z));
                 float distXZ = math.distance(pos.xz, targetPos.xz);
                 float desiredSpeed = CalculateDesiredSpeed(in moveData, ref grid, pos, moveData.Speed, targetPos.y, distXZ, arrivalRadius);
-                
+
                 float3 nextPos = CalculateNextPosition(in moveData, ref grid, pos, moveDirXZ, desiredSpeed, grid.CellSize);
 
-                ApplyMovement(ref moveData,  ref transform, pos, nextPos);
+                ApplyMovement(ref moveData, ref transform, pos, nextPos);
                 ApplyRotation(in moveData, ref transform, ref grid, pos, targetPos, moveDirXZ);
                 moveData.TargetCellPos = targetPos;
             }
@@ -97,21 +94,16 @@ namespace Core.PathfindingAStar
                 if (!math.isfinite(smoothWeight) || smoothWeight <= 0f) smoothWeight = 1f;
 
                 float deltaY = targetY - pos.y;
-                float slope = deltaY / math.max(distXZ, 0.5f); 
-                
+                float slope = deltaY / math.max(distXZ, 0.5f);
+
                 float slopeMul = 1.0f;
-                if (slope > 0) 
-                {
-                    slopeMul = math.lerp(1.0f, 0.2f, math.saturate(slope / moveData.MaxClimbRateFactor));
-                }
-                else 
-                {
-                    slopeMul = math.lerp(1.0f, 1.2f, math.saturate(-slope));
-                }
-                
+                slopeMul = slope > 0
+                    ? math.lerp(1.0f, 0.2f, math.saturate(slope / moveData.MaxClimbRateFactor))
+                    : math.lerp(1.0f, 1.2f, math.saturate(-slope));
+
                 float weightMul = math.clamp(1.0f / math.max(PhysConst.EPSILON_WEIGHT, smoothWeight), moveData.MinSpeedMul, moveData.MaxSpeedMul);
                 float speed = moveData.Speed * weightMul * slopeMul;
-                
+
                 float slowRadius = arrivalRadius * 2f;
                 if (distXZ < slowRadius)
                 {
@@ -124,7 +116,10 @@ namespace Core.PathfindingAStar
             [MethodImpl(MethodImplOptions.AggressiveInlining)]
             private float3 CalculateNextPosition(in MoveSettings moveData, ref GridBlob grid, float3 pos, float3 dirXZ, float speed, float cellSize)
             {
-                float step = math.clamp(speed * DeltaTime, math.max(0.01f, cellSize * 0.02f), 100f);
+                float distToTarget = math.distance(pos.xz, moveData.TargetCellPos.xz);
+                float step = math.min(
+                    math.clamp(speed * DeltaTime, math.max(0.01f, cellSize * 0.02f), 100f),
+                    distToTarget);
                 float3 nextXZ = pos + dirXZ * step;
 
                 float sampledH = GridUtils.GetHeightBilinear(ref grid, nextXZ);
@@ -141,11 +136,11 @@ namespace Core.PathfindingAStar
             private void ApplyMovement(ref MoveSettings moveData, ref LocalTransform transform, float3 pos, float3 nextPos)
             {
                 float3 desiredVelocity = (nextPos - pos) / math.max(DeltaTime, PhysConst.EPSILON_STABLE);
-                float blend = math.clamp(moveData.Acceleration * DeltaTime, 0f, 1f);
-
-                moveData.Velocity = math.lerp(moveData.Velocity, desiredVelocity, blend);
-                float3 finalPos = pos + (moveData.Velocity * DeltaTime);
                 
+                moveData.Velocity = math.lerp(moveData.Velocity, desiredVelocity, math.saturate(moveData.Acceleration * DeltaTime));
+                
+                float3 finalPos = pos + (moveData.Velocity * DeltaTime);
+
                 float alphaY = math.clamp(DeltaTime * moveData.VerticalSmoothSpeed, 0f, 1f);
                 float finalHeight = GridUtils.GetHeightBilinear(ref GridBlob.Value, transform.Position);
                 finalPos.y = math.lerp(pos.y, finalHeight, alphaY);

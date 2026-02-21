@@ -1,6 +1,7 @@
 using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
+using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace Gameplay.Player
@@ -24,7 +25,7 @@ namespace Gameplay.Player
             var moveJob = new MoveJob
             {
                 Input = moveDir,
-                DeltaTime = SystemAPI.Time.DeltaTime
+                DeltaTime = Time.deltaTime
             };
             state.Dependency = moveJob.ScheduleParallel(state.Dependency);
         }

@@ -157,13 +157,20 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::PFStar.MoveSettingsAuthoring
   isMoving: 1
-  Speed: 10
+  Speed: 15
   StartDelay: 0.1
+  LookDir:
+    x: 0
+    y: 0
+    z: 0
   PivotOffset: 0.5
   RotSpeed: 10
   Acceleration: 12
+  MinSlopeMul: 0.2
+  MaxSlopeMul: 1.2
   MinSpeedMul: 0.7
   MaxSpeedMul: 2
   VerticalSmoothSpeed: 6
   MaxClimbRateFactor: 1.2
   ArrivalRadiusFactor: 0.45
+  StuckTimer: 0

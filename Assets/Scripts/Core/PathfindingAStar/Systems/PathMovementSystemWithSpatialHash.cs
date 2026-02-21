@@ -21,19 +21,18 @@ namespace Core.PathfindingAStar
 
         private EntityQuery _agentQuery;
         private NativeParallelMultiHashMap<int, int> _spatialMap;
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
 
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridTag>();
-            _agentQuery = new EntityQueryBuilder(Allocator.Temp)
+            _agentQuery = SystemAPI.QueryBuilder()
                 .WithAll<PFAgentState>()
                 .WithAll<LocalTransform>()
                 .WithAll<MoveSettings>()
                 .WithAll<MinionTag>()
-                .Build(ref state);
+                .Build();
 
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
             state.Enabled = false;
         }
 
@@ -41,11 +40,8 @@ namespace Core.PathfindingAStar
         public void OnUpdate(ref SystemState state)
         {
             if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
-
-            _gridBlobLookup.Update(ref state);
-
-            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
+            
+            var gridBlobRef = SystemAPI.GetSingleton<GridBlobReference>().Value;
 
             int count = _agentQuery.CalculateEntityCount();
 
@@ -57,14 +53,14 @@ namespace Core.PathfindingAStar
 
             _spatialMap.Clear();
             
-            var allPositions = new NativeArray<float3>(count, Allocator.TempJob);
+            var allPositions = new NativeArray<float3>(count, Allocator.TempJob, NativeArrayOptions.UninitializedMemory);
 
             var copyJobHandle = new CopyPositionsJob
             {
                 Positions = allPositions
             }.ScheduleParallel(_agentQuery, state.Dependency);
 
-            int framePhase = Time.frameCount % 2;            
+            int framePhase = Time.frameCount % 2;         
             var hashJobHandle = new HashToMultiMapJob
             {
                 SpatialMap = _spatialMap.AsParallelWriter(),
@@ -76,7 +72,7 @@ namespace Core.PathfindingAStar
                 GridBlob = gridBlobRef,
                 SpatialMap = _spatialMap,
                 AllPositions = allPositions,
-                DeltaTime = SystemAPI.Time.DeltaTime,
+                DeltaTime = state.WorldUnmanaged.Time.DeltaTime,
                 CellSize = navSettings.SpatialCellSize,
                 SeparationRadius = navSettings.SeparationRadius,
                 SeparationWeight = navSettings.SeparationWeight,
@@ -85,7 +81,7 @@ namespace Core.PathfindingAStar
 
             state.Dependency = moveJobHandle;
 
-            allPositions.Dispose(state.Dependency);
+            state.Dependency = allPositions.Dispose(state.Dependency);
         }
 
         [BurstCompile]
