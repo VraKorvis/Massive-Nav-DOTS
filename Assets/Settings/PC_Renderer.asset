@@ -27,7 +27,8 @@ MonoBehaviour:
   m_RendererFeatures:
   - {fileID: 7833122117494664109}
   - {fileID: 8814455987826607866}
-  m_RendererFeatureMap: ad6b866f10d7b46cfa46b81a053d537a
+  - {fileID: 487483475150039932}
+  m_RendererFeatureMap: ad6b866f10d7b46cfa46b81a053d537a7ceb304aa3e3c306
   m_UseNativeRenderPass: 1
   xrSystemData: {fileID: 0}
   postProcessData: {fileID: 11400000, guid: 41439944d30ece34e96484bdb6645b55, type: 2}
@@ -56,6 +57,27 @@ MonoBehaviour:
   m_DepthTextureFormat: 0
   m_AccurateGbufferNormals: 0
   m_IntermediateTextureMode: 0
+--- !u!114 &487483475150039932
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 9c1b662217e64bb9b72e19c6915cf20e, type: 3}
+  m_Name: CrowdShadowsFeature
+  m_EditorClassIdentifier: Assembly-CSharp::Features.CrowdShadows.CrowdShadowsFeature
+  m_Active: 1
+  Settings:
+    TextureSize: 512
+    ComputeShader: {fileID: 7200000, guid: 10d39105d09f343bc92e8f376d72de95, type: 3}
+    RenderPassEvent: 250
+    WorldSize: {x: 200, y: 200}
+    WorldOffset: {x: 0, y: 0, z: 0}
+    DefaultNormalizeScale: 0.3
+    BlurRadius: 10
 --- !u!114 &7833122117494664109
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -97,7 +119,7 @@ MonoBehaviour:
   m_Active: 1
   Settings:
     ComputeShader: {fileID: 7200000, guid: 28bb9cfbea40c425c806863447e8730d, type: 3}
-    TextureSize: 1024
+    TextureSize: 512
     RenderEvent: 250
     WorldSize: {x: 200, y: 200}
     WorldOffset: {x: 0, y: 0, z: 0}
