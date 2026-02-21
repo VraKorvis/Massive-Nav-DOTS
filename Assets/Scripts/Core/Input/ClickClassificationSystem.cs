@@ -4,8 +4,8 @@ using Unity.Entities;
 
 namespace Core.Input
 {
+    [UpdateInGroup(typeof(InitializationSystemGroup))]
     [UpdateBefore(typeof(MoveToCommandSystem))]
-    [UpdateInGroup(typeof(SimulationSystemGroup))]
     public partial struct ClickClassificationSystem : ISystem
     {
         public void OnCreate(ref SystemState state)

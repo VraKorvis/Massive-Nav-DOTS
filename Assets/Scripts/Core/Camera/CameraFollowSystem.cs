@@ -14,7 +14,6 @@ namespace Core.Camera
             
             if (!SystemAPI.TryGetSingletonEntity<PlayerTag>(out Entity player)) return;
 
-            Dependency.Complete();
             var ltwLookup = SystemAPI.GetComponentLookup<LocalToWorld>(true);
             
             if (!ltwLookup.HasComponent(player)) return;

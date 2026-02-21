@@ -1,8 +1,10 @@
+using Core.Gameplay;
 using Unity.Entities;
 
 namespace Core.Input
 {
-    [UpdateInGroup(typeof(InitializationSystemGroup), OrderFirst = true)]
+    [UpdateInGroup(typeof(InitializationSystemGroup))]
+    [UpdateAfter(typeof(MoveToCommandSystem))] 
     public partial struct InputCleanupSystem : ISystem
     {
         public void OnUpdate(ref SystemState state)

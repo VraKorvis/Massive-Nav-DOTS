@@ -4,6 +4,7 @@ using UnityEngine;
 namespace Core.Input
 {
     [UpdateInGroup(typeof(InitializationSystemGroup))]
+    [UpdateBefore(typeof(ClickClassificationSystem))]
     public partial class ClickCreatorSystem : SystemBase
     {
         private PlayerInputSystemActions _inputActions;
