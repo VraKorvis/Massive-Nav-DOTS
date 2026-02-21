@@ -1,3 +1,4 @@
+using Core.Camera;
 using Core.PathfindingAStar;
 using Core.Spatial;
 using Map.Grid;
@@ -18,22 +19,23 @@ namespace Features.OptRenderer
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<MainCameraData>();
             state.RequireForUpdate<CullingSettings>();
             state.RequireForUpdate<GridTag>();
             state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridSettings>();
+            state.Enabled = false;
         }
 
+        [BurstCompile]
         public void OnUpdate(ref SystemState state)
         {
-            var camera = UnityEngine.Camera.main;
-            if (camera == null) return;
-
             if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
             if (!SystemAPI.TryGetSingleton<CullingSettings>(out var cullingSettings)) return;
             if (!SystemAPI.TryGetSingleton<SpatialPartitioningData>(out var spatialData)) return;
 
             if (!spatialData.Initialized || spatialData.AgentCount == 0) return;
+            var cameraData = SystemAPI.GetSingleton<MainCameraData>();
 
             if (!cullingSettings.EnableCulling)
             {
@@ -43,21 +45,24 @@ namespace Features.OptRenderer
             
             var readyMorton = spatialData.IsBufferA ? spatialData.MortonA : spatialData.MortonB;
             var readyCellStarts = spatialData.IsBufferA ? spatialData.CellStartsA : spatialData.CellStartsB;
+            var readyCellCounts = spatialData.IsBufferA ? spatialData.CellCountsA : spatialData.CellCountsB;
+
             var readyHandle = spatialData.IsBufferA ? spatialData.HandleA : spatialData.HandleB;
-            
+
             var jobDeps = JobHandle.CombineDependencies(state.Dependency, readyHandle);
 
             var agentSpareCullingJob = new CombinedCullingJob
             {
-                CameraPos = camera.transform.position,
+                CameraPos = cameraData.Position,
                 CellSize = navSettings.SpatialCellSize,
                 SortedEntries = readyMorton,
                 CellStarts = readyCellStarts,
+                CellCounts = readyCellCounts,
                 TotalAntsCount = spatialData.AgentCount,
                 GlobalThreshold = cullingSettings.GlobalThreshold,
                 MaxAntsPerCell = cullingSettings.MaxAntsPerCell,
                 SafeDistanceSq = cullingSettings.SafeDistance * cullingSettings.SafeDistance,
-                DeltaTime = SystemAPI.Time.DeltaTime,
+                DeltaTime = state.WorldUnmanaged.Time.DeltaTime,
                 FadeSpeed = cullingSettings.FadeSpeed,
             }.ScheduleParallel(jobDeps);
 
@@ -67,11 +72,10 @@ namespace Features.OptRenderer
 
         [BurstCompile]
         [WithAll(typeof(DensityCullingData), typeof(GpuVisibilityProperty))]
-        [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
         // [WithPresent(typeof(MaterialMeshInfo))]
         public partial struct ResetVisibilityJob : IJobEntity
         {
-            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref GpuVisibilityProperty shaderProp)  
+            private void Execute(EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref GpuVisibilityProperty shaderProp)
             {
                 mmiEnabled.ValueRW = true;
                 cullingData.Visibility = 1.0f;
@@ -82,13 +86,15 @@ namespace Features.OptRenderer
 
         [BurstCompile]
         [WithAll(typeof(DensityCullingData), typeof(GpuVisibilityProperty))]
-        [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
+        // [WithOptions(EntityQueryOptions.IgnoreComponentEnabledState)]
         public partial struct CombinedCullingJob : IJobEntity
         {
             [ReadOnly]
             public NativeArray<MortonEntry> SortedEntries;
             [ReadOnly]
             public NativeArray<int> CellStarts;
+            [ReadOnly]
+            public NativeArray<int> CellCounts;
 
             public float3 CameraPos;
             public float CellSize;
@@ -102,32 +108,37 @@ namespace Features.OptRenderer
             private void Execute(Entity entity, EnabledRefRW<MaterialMeshInfo> mmiEnabled, ref DensityCullingData cullingData, ref GpuVisibilityProperty shaderProp, in LocalTransform transform)
             {
                 float distSq = math.distancesq(transform.Position, CameraPos);
+
                 bool shouldBeVisible = true;
+                
+                uint code = MortonUtils.GetMorton2D(transform.Position, CellSize);
+                int density = 0;
 
-                if (distSq >= SafeDistanceSq && TotalAntsCount >= GlobalThreshold)
+                if (code < CellStarts.Length)
                 {
-                    uint code = MortonUtils.GetMorton2D(transform.Position, CellSize);
-                    int density = 0;
+                    int startIdx = CellStarts[(int)code];
+                    if (startIdx != -1)
+                        density = CellCounts[(int)code];
+                }
+                
+                if (distSq >= SafeDistanceSq && density > MaxAntsPerCell)
+                {
+                    float survivalChance = (float)MaxAntsPerCell / density;
 
-                    if (code < CellStarts.Length)
-                    {
-                        int startIdx = CellStarts[(int)code];
-                        if (startIdx != -1)
-                        {
-                            int endIdx = startIdx + 1;
-                            while (endIdx < TotalAntsCount && SortedEntries[endIdx].Key == code)
-                            {
-                                endIdx++;
+                    uint hash = math.hash(new uint2((uint)entity.Index, code));
+                    float entityHash = (hash & 0xFFFFFF) / (float)0xFFFFFF;
 
-                                if (endIdx - startIdx > MaxAntsPerCell * 2) break;
-                            }
-                            density = endIdx - startIdx;
-                        }
-                    }
+                    shouldBeVisible &= entityHash <= survivalChance;
+                }
+                
+                if (TotalAntsCount > GlobalThreshold)
+                {
+                    float globalChance = (float)GlobalThreshold / TotalAntsCount;
 
-                    float survivalChance = math.saturate((float)MaxAntsPerCell / math.max(density, 1));
-                    float entityHash = (float)((entity.Index * 0.61803398875f) % 1.0);
-                    shouldBeVisible = entityHash <= survivalChance;
+                    uint hash = math.hash(new uint2((uint)entity.Index, 12345));
+                    float entityHash = (hash & 0xFFFFFF) / (float)0xFFFFFF;
+
+                    shouldBeVisible &= entityHash <= globalChance;
                 }
 
                 cullingData.Visibility = shouldBeVisible
@@ -135,7 +146,13 @@ namespace Features.OptRenderer
                     : math.max(0.0f, cullingData.Visibility - DeltaTime * FadeSpeed);
                 shaderProp.Value = cullingData.Visibility;
 
-                mmiEnabled.ValueRW = cullingData.Visibility > 0.0f;
+                bool isActuallyVisible = cullingData.Visibility > 0.02f;
+                if (mmiEnabled.ValueRW != isActuallyVisible)
+                {
+                    mmiEnabled.ValueRW = isActuallyVisible;
+                }
+
+                cullingData.ShouldBeVisible = shouldBeVisible;
             }
         }
     }
