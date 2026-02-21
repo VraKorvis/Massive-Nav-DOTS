@@ -77,6 +77,9 @@ namespace Map.Generation
 
             GameObject parentRock = new GameObject("Rocks");
             parentRock.transform.SetParent(parentFolder);
+            
+            Collider[] results = new Collider[1];
+            
             for (int x = 0; x < mapSize.x; x++)
             {
                 for (int y = 0; y < mapSize.y; y++)
@@ -85,7 +88,7 @@ namespace Map.Generation
                     if (n > threshold)
                     {
                         GameObject prefab = rockPrefabs[rand.NextInt(0, rockPrefabs.Length)];
-
+                        
                         Vector3 pos = startPos + new Vector3(x * cellSize, 0, y * cellSize);
                         float3 rayStart = new float3(pos.x, 100f, pos.z);
 
@@ -93,10 +96,23 @@ namespace Map.Generation
 
                         if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, groundLayer))
                         {
-                            Quaternion finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
-
+                            float rockRadius = 1.0f;
+                            MeshFilter mf = prefab.GetComponentInChildren<MeshFilter>();
+                            if (mf != null)
+                            {
+                                Vector3 extents = mf.sharedMesh.bounds.extents;
+                                rockRadius = math.max(extents.x, extents.z);
+                            }
+                            float checkRadius = rockRadius * 0.6f;
+                            
                             Vector3 finalPos = hit.point + (hit.normal * verticalOffset);
 
+                            int overlapCount = Physics.OverlapSphereNonAlloc(finalPos, checkRadius, results, obstacleLayer);
+    
+                            if (overlapCount > 0) continue;
+                            
+                            Quaternion finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
+                            
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
                             // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
@@ -128,10 +144,10 @@ namespace Map.Generation
                 }
             }
             Physics.SyncTransforms();
-            Debug.Log($"Generated {parentFolder.childCount} rocks.");
+            Debug.Log($"Generated {parentRock.transform.childCount} rocks.");
         }
 
-        public void GenerateGrass()
+        private void GenerateGrass()
         {
             if (parentFolder == null || grassPrefabs.Length == 0) return;
 
@@ -194,7 +210,7 @@ namespace Map.Generation
                     }
                 }
             }
-            Debug.Log($"Generated {parentFolder.childCount} grass/objects.");
+            Debug.Log($"Generated {parentGrass.transform.childCount} grass/objects.");
         }
 
         [ContextMenu("Analyze Grid")]
@@ -224,7 +240,8 @@ namespace Map.Generation
 
             BakeTerrainParams(cornerOrigin, width, height, total);
             
-            BakeWallPushField(width, height);
+            // BakeWallPushField(width, height);
+            BakeWallPushGradientField(width, height);
             ApplyWallInflation(total, width, height);
 
             dataAsset.hasData = true;
@@ -311,6 +328,55 @@ namespace Map.Generation
                         }
                     }
                     dataAsset.WallPush[index] = totalPush;
+                }
+            }
+        }
+        
+        private void BakeWallPushGradientField(int width, int height)
+        {
+            float[] distField = new float[width * height];
+            
+            for (int i = 0; i < distField.Length; i++)
+                distField[i] = (dataAsset.CellsType[i] == CellType.Wall) ? 0f : 1000f;
+
+            for (int y = 1; y < height; y++) {
+                for (int x = 1; x < width; x++) {
+                    int i = y * width + x;
+                    if (distField[i] == 0) continue;
+                    float d1 = distField[i - 1] + 1f;
+                    float d2 = distField[i - width] + 1f;
+                    distField[i] = math.min(distField[i], math.min(d1, d2));
+                }
+            }
+
+            for (int y = height - 2; y >= 0; y--) {
+                for (int x = width - 2; x >= 0; x--) {
+                    int i = y * width + x;
+                    if (distField[i] == 0) continue;
+                    float d1 = distField[i + 1] + 1f;
+                    float d2 = distField[i + width] + 1f;
+                    distField[i] = math.min(distField[i], math.min(d1, d2));
+                }
+            }
+
+            float maxDistance = 1.0f;
+
+            for (int y = 1; y < height - 1; y++) {
+                for (int x = 1; x < width - 1; x++) {
+                    int i = y * width + x;
+                    if (dataAsset.CellsType[i] == CellType.Wall) continue;
+
+                    if (distField[i] < maxDistance) {
+                        float dx = distField[i + 1] - distField[i - 1];
+                        float dz = distField[i + width] - distField[i - width];
+    
+                        float3 grad = new float3(dx, 0, dz);
+                        if (math.lengthsq(grad) > 0.0001f) {
+                            dataAsset.WallPush[i] = math.normalize(grad); 
+                        }
+                    } else {
+                        dataAsset.WallPush[i] = float3.zero;
+                    }
                 }
             }
         }
