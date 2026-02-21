@@ -6,7 +6,7 @@ using UnityEngine;
 
 namespace Features.Pheromones
 {
-    public class PheromoneBufferReference : IComponentData, IDisposable
+    public class CrowdPositonsBufferReference : IComponentData, IDisposable
     {
         public GraphicsBuffer GpuBuffer;
         public NativeArray<float4> CpuData;

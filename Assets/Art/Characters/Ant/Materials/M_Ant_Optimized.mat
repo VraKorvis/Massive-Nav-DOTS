@@ -25,6 +25,7 @@ Material:
   m_Parent: {fileID: -876546973899608171, guid: 6307497600949467dad5ac2f1ab21a32, type: 3}
   m_ModifiedSerializedProperties: 4
   m_ValidKeywords:
+  - _ALPHATEST_ON
   - _RECEIVE_SHADOWS_OFF
   - _SPECULAR_SETUP
   m_InvalidKeywords: []
@@ -33,7 +34,7 @@ Material:
   m_DoubleSidedGI: 0
   m_CustomRenderQueue: -1
   stringTagMap:
-    RenderType: Opaque
+    RenderType: TransparentCutout
   disabledShaderPasses:
   - MOTIONVECTORS
   - SHADOWCASTER

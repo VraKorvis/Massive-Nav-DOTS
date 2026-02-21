@@ -1,0 +1,115 @@
+#pragma kernel ClearCounts
+#pragma kernel AccumulateCounts
+#pragma kernel NormalizeCounts
+#pragma kernel BlurH
+#pragma kernel BlurV
+
+RWStructuredBuffer<uint> _CrowdShadowBuffer;
+RWTexture2D<float> _CrowdShadowFloat;
+Texture2D<float> _InputFloat;
+RWTexture2D<float> _OutputFloat;
+
+StructuredBuffer<float4> _AgentPositions;
+uint _AgentCount;
+float4 _WorldParams;
+uint _TexSize;
+float _NormalizeScale;
+int _BlurRadius;
+
+[numthreads(8,8,1)]
+void ClearCounts(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TexSize || id.y >= _TexSize) return;
+    _CrowdShadowBuffer[id.y * _TexSize + id.x] = 0u;
+}
+
+[numthreads(64,1,1)]
+void AccumulateCounts(uint id : SV_DispatchThreadID)
+{
+    if (id.x >= _AgentCount) return;
+
+    float4 agent = _AgentPositions[id];
+    float3 worldPos = agent.xyz;
+    float visibility = agent.w;
+
+    float2 uv = (worldPos.xz - _WorldParams.zw) / _WorldParams.xy;
+    uv *= _TexSize;
+
+    int2 center = int2(uv);
+
+    float invRadiusX = 1.0 / 3.0;
+    float invRadiusY = 1.0 / 2.0;
+    
+    for (int y = -2; y <= 2; y++)
+    {
+        for (int x = -3; x <= 3; x++)
+        {
+                     
+            int2 p = center + int2(x, y);
+            if (p.x < 0 || p.y < 0 || p.x >= (int)_TexSize || p.y >= (int)_TexSize)
+                continue;
+
+            float nx = x * invRadiusX;
+            float ny = y * invRadiusY;
+            float ellipse = nx * nx + ny * ny;
+
+            if (ellipse <= 1.0)
+            {
+                float weight = (1.0 - ellipse) * visibility;
+                weight = saturate(weight);
+                uint add = (uint)(weight * 32000.0);
+                uint index = p.y * _TexSize + p.x;
+                InterlockedAdd(_CrowdShadowBuffer[index], add);
+            }
+        }
+    }
+}
+
+[numthreads(8,8,1)]
+void NormalizeCounts(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TexSize || id.y >= _TexSize) return;
+
+    uint c = _CrowdShadowBuffer[id.y * _TexSize + id.x];
+    float rawValue = (float)c / 65535.0;
+    
+    float v = sqrt(rawValue); 
+
+    v *= _NormalizeScale;
+
+    v = v / (1.0 + v);
+    
+    v = v * v * (3.0 - 2.0 * v);
+    
+    _CrowdShadowFloat[id.xy] = saturate(v);
+}
+
+[numthreads(8,8,1)]
+void BlurH(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TexSize || id.y >= _TexSize) return;
+    float sum = 0.0;
+    float wsum = 0.0;
+    for (int i = -_BlurRadius; i <= _BlurRadius; ++i)
+    {
+        int sx = clamp((int)id.x + i, 0, (int)_TexSize - 1);
+        sum += _InputFloat[uint2(sx, id.y)];
+        wsum += 1.0;
+    }
+    _OutputFloat[id.xy] = sum / wsum;
+}
+
+[numthreads(8,8,1)]
+void BlurV(uint3 id : SV_DispatchThreadID)
+{
+    if (id.x >= _TexSize || id.y >= _TexSize) return;
+    float sum = 0.0;
+    float wsum = 0.0;
+    for (int i = -_BlurRadius; i <= _BlurRadius; ++i)
+    {
+        int sy = clamp((int)id.y + i, 0, (int)_TexSize - 1);
+        sum += _InputFloat[uint2(id.x, sy)];
+        wsum += 1.0;
+    }
+    _OutputFloat[id.xy] = sum / wsum;
+}
