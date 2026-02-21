@@ -10,19 +10,19 @@ using UnityEngine;
 namespace Features.Pheromones
 {
     [UpdateInGroup(typeof(PresentationSystemGroup))]
-    public partial struct PreparePheromoneBufferSystem : ISystem
+    public partial struct PrepareCrowdPositionsBufferSystem : ISystem
     {
         private EntityQuery _agentQuery;
 
         public void OnCreate(ref SystemState state)
         {
             _agentQuery = state.GetEntityQuery(typeof(LocalTransform), typeof(DensityCullingData), typeof(MinionTag));
-            state.EntityManager.AddComponentData(state.SystemHandle, new PheromoneBufferReference());
+            state.EntityManager.AddComponentData(state.SystemHandle, new CrowdPositonsBufferReference());
         }
 
         public void OnUpdate(ref SystemState state)
         {
-            var bufferRef = state.EntityManager.GetComponentData<PheromoneBufferReference>(state.SystemHandle);
+            var bufferRef = state.EntityManager.GetComponentData<CrowdPositonsBufferReference>(state.SystemHandle);
             int count = _agentQuery.CalculateEntityCount();
             if (count == 0) return;
 
@@ -33,13 +33,16 @@ namespace Features.Pheromones
                 Positions = bufferRef.CpuData
             }.ScheduleParallel(_agentQuery, state.Dependency);
             
-            state.Dependency =  fillPheromoneBufferJobHandle;
+            fillPheromoneBufferJobHandle.Complete();
+            bufferRef.GpuBuffer.SetData(bufferRef.CpuData, 0, 0, count);
             bufferRef.ActualCount = count;
             state.EntityManager.SetComponentData(state.SystemHandle, bufferRef);
+            state.Dependency =  fillPheromoneBufferJobHandle;
+            
         }
 
         [BurstDiscard]
-        private void UpdateInternalBuffers(int count, PheromoneBufferReference bufferRef)
+        private void UpdateInternalBuffers(int count, CrowdPositonsBufferReference bufferRef)
         {
             if (!bufferRef.CpuData.IsCreated || bufferRef.CpuData.Length < count)
             {
@@ -65,9 +68,11 @@ namespace Features.Pheromones
 
         public void OnDestroy(ref SystemState state)
         {
-            if (state.EntityManager.HasComponent<PheromoneBufferReference>(state.SystemHandle))
+            if (state.EntityManager.HasComponent<CrowdPositonsBufferReference>(state.SystemHandle))
             {
-                state.EntityManager.GetComponentData<PheromoneBufferReference>(state.SystemHandle).Dispose();
+                var bufferRef = state.EntityManager.GetComponentData<CrowdPositonsBufferReference>(state.SystemHandle);
+                bufferRef.Dispose();
+                state.EntityManager.RemoveComponent<CrowdPositonsBufferReference>(state.SystemHandle);
             }
         }
     }
