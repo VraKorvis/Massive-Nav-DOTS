@@ -20,9 +20,9 @@ namespace Core.Spatial
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GridBlobReference>();
-            _agentQuery = new EntityQueryBuilder(Allocator.Temp)
+            _agentQuery = SystemAPI.QueryBuilder()
                 .WithAll<PFAgentState, LocalTransform, Waypoint, MoveSettings, MinionTag>()
-                .Build(ref state);
+                .Build();
 
             state.EntityManager.CreateEntity(typeof(SpatialPartitioningData));
         }
@@ -35,13 +35,13 @@ namespace Core.Spatial
 
             int count = _agentQuery.CalculateEntityCount();
             if (count == 0) return;
-
-            var gridBlob = SystemAPI.GetSingleton<GridBlobReference>().Value;
-            var gridDims = gridBlob.Value.Dimensions;
-            var gridSizMorton = 1 << (math.ceillog2(math.max(gridDims.x, gridDims.y)) * 2);
-
+            
             if (!spatialData.ValueRO.MortonA.IsCreated || spatialData.ValueRO.MortonA.Length < count)
             {
+                var gridBlob = SystemAPI.GetSingleton<GridBlobReference>().Value;
+                var gridDims = gridBlob.Value.Dimensions;
+                var gridSizMorton = 1 << (math.ceillog2(math.max(gridDims.x, gridDims.y)) * 2);
+
                 state.Dependency.Complete();
                 spatialData.ValueRW.HandleA.Complete();
                 spatialData.ValueRW.HandleB.Complete();
@@ -50,36 +50,43 @@ namespace Core.Spatial
                 EnsureCapacity(ref spatialData.ValueRW.RadixTempBuffer, count, default);
                 EnsureCapacity(ref spatialData.ValueRW.PositionCacheA, count, default);
                 EnsureCapacity(ref spatialData.ValueRW.PositionCacheB, count, default);
+                
+                EnsureCapacity(ref spatialData.ValueRW.EntitiesCacheA, count, default);
+                EnsureCapacity(ref spatialData.ValueRW.EntitiesCacheB, count, default);
+                
                 EnsureCapacity(ref spatialData.ValueRW.CellStartsA, gridSizMorton, default);
                 EnsureCapacity(ref spatialData.ValueRW.CellStartsB, gridSizMorton, default);
+                
+                EnsureCapacity(ref spatialData.ValueRW.CellCountsA, gridSizMorton, default);
+                EnsureCapacity(ref spatialData.ValueRW.CellCountsB, gridSizMorton, default);
             }
-
+            
             var isBufferA = spatialData.ValueRO.IsBufferA;
             var nextPositionCache = isBufferA ? spatialData.ValueRO.PositionCacheB : spatialData.ValueRO.PositionCacheA;
+            var nextEntitiesCache = isBufferA ? spatialData.ValueRO.EntitiesCacheB : spatialData.ValueRO.EntitiesCacheA;
             var nextMorton = isBufferA ? spatialData.ValueRO.MortonB : spatialData.ValueRO.MortonA;
             var nextCellStarts = isBufferA ? spatialData.ValueRO.CellStartsB : spatialData.ValueRO.CellStartsA;
+            var nextCellCount = isBufferA ? spatialData.ValueRO.CellCountsB : spatialData.ValueRO.CellCountsA;
             var radixTempBuffer = spatialData.ValueRO.RadixTempBuffer;
 
-            var transforms = _agentQuery.ToComponentDataArray<LocalTransform>(Allocator.TempJob);
             var copyJobHandle = new CopyPositionsParallelJob
             {
-                Transforms = transforms,
-                Positions = nextPositionCache
-            }.Schedule(count, 64, state.Dependency);
-
+                Positions = nextPositionCache,
+                AgentQueryEntities = nextEntitiesCache
+            }.ScheduleParallel(_agentQuery, state.Dependency);
+            
             var nextHandle = isBufferA ? spatialData.ValueRO.HandleB : spatialData.ValueRO.HandleA;
-
+   
             if (nextHandle.IsCompleted)
             {
                 var prepareDeps = JobHandle.CombineDependencies(copyJobHandle, state.Dependency);
-                var entities = _agentQuery.ToEntityArray(Allocator.TempJob);
 
                 var prepareHandle = new PrepareMortonJobForArray
                 {
                     Positions = nextPositionCache,
                     MortonEntries = nextMorton,
                     CellSize = navSettings.SpatialCellSize,
-                    AgentQueryEntities = entities
+                    AgentQueryEntities = nextEntitiesCache
                 }.Schedule(count, 64, prepareDeps);
 
                 var sortHandle = new MortonRadixSortJob
@@ -91,7 +98,8 @@ namespace Core.Spatial
                 var buildIndexHandle = new BuildCellStartsJob
                 {
                     SortedEntries = nextMorton,
-                    CellStarts = nextCellStarts
+                    CellStarts = nextCellStarts,
+                    CellCounts = nextCellCount
                 }.Schedule(sortHandle);
 
                 if (isBufferA)
@@ -112,16 +120,17 @@ namespace Core.Spatial
         }
 
         [BurstCompile]
-        private struct CopyPositionsParallelJob : IJobParallelFor
+        private partial struct CopyPositionsParallelJob : IJobEntity
         {
-            [ReadOnly, DeallocateOnJobCompletion]
-            public NativeArray<LocalTransform> Transforms;
-            [WriteOnly]
+            [WriteOnly] [NativeDisableContainerSafetyRestriction]
             public NativeArray<float3> Positions;
+            [WriteOnly] [NativeDisableContainerSafetyRestriction]
+            public NativeArray<Entity> AgentQueryEntities;
 
-            public void Execute(int index)
+            private void Execute(Entity entity, [EntityIndexInQuery] int index, in LocalTransform transform)
             {
-                Positions[index] = Transforms[index].Position;
+                Positions[index] = transform.Position;
+                AgentQueryEntities[index] = entity;
             }
         }
 
@@ -179,37 +188,42 @@ namespace Core.Spatial
             [ReadOnly]
             public NativeArray<MortonEntry> SortedEntries;
             public NativeArray<int> CellStarts;
-
+            public NativeArray<int> CellCounts;
+        
             public void Execute()
             {
                 unsafe
                 {
                     UnsafeUtility.MemSet(CellStarts.GetUnsafePtr(), 0xFF, (long)CellStarts.Length * sizeof(int));
+                    UnsafeUtility.MemClear(CellCounts.GetUnsafePtr(), CellCounts.Length * sizeof(int));
                 }
-
-                if (SortedEntries.Length == 0) return;
-
-                uint firstAgentCellCode = SortedEntries[0].Key;
-
-                if (firstAgentCellCode < (uint)CellStarts.Length)
+        
+                if (SortedEntries.Length == 0)
+                    return;
+        
+                uint previousCellCode = SortedEntries[0].Key;
+                int startIndex = 0;
+        
+                for (int i = 0; i <= SortedEntries.Length; i++)
                 {
-                    CellStarts[(int)firstAgentCellCode] = 0;
-                }
-
-                uint previousCellCode = firstAgentCellCode;
-
-                for (int i = 1; i < SortedEntries.Length; i++)
-                {
-                    uint currentCellCode = SortedEntries[i].Key;
-
-                    if (currentCellCode != previousCellCode)
+                    bool endOfCell =
+                        i == SortedEntries.Length ||
+                        SortedEntries[i].Key != previousCellCode;
+        
+                    if (endOfCell)
                     {
-                        if (currentCellCode < (uint)CellStarts.Length)
+                        if (previousCellCode < (uint)CellStarts.Length)
                         {
-                            CellStarts[(int)currentCellCode] = i;
+                            int keyIndex = (int)previousCellCode;
+                            CellStarts[keyIndex] = startIndex;
+                            CellCounts[keyIndex] = i - startIndex;
                         }
-
-                        previousCellCode = currentCellCode;
+        
+                        if (i < SortedEntries.Length)
+                        {
+                            previousCellCode = SortedEntries[i].Key;
+                            startIndex = i;
+                        }
                     }
                 }
             }
@@ -220,7 +234,7 @@ namespace Core.Spatial
         {
             [ReadOnly]
             public NativeArray<float3> Positions;
-            [ReadOnly, DeallocateOnJobCompletion]
+            [ReadOnly]
             public NativeArray<Entity> AgentQueryEntities;
             public float CellSize;
             [WriteOnly]
@@ -255,20 +269,27 @@ namespace Core.Spatial
 
         public void OnDestroy(ref SystemState state)
         {
-            if (SystemAPI.TryGetSingleton<SpatialPartitioningData>(out var data))
+            if (SystemAPI.TryGetSingletonRW<SpatialPartitioningData>(out var data))
             {
-                JobHandle.CombineDependencies(data.HandleA, data.HandleB, state.Dependency).Complete();
-                if (data.MortonA.IsCreated)
-                {
-                    data.MortonA.Dispose();
-                    data.MortonB.Dispose();
-                    data.RadixTempBuffer.Dispose();
-                    data.PositionCacheA.Dispose();
-                    data.PositionCacheB.Dispose();
-                    data.CellStartsA.Dispose();
-                    data.CellStartsB.Dispose();
-                }
+                JobHandle.CombineDependencies(data.ValueRO.HandleA, data.ValueRO.HandleB, state.Dependency).Complete();
+        
+                DisposeIfCreated(ref data.ValueRW.MortonA);
+                DisposeIfCreated(ref data.ValueRW.MortonB);
+                DisposeIfCreated(ref data.ValueRW.RadixTempBuffer);
+                DisposeIfCreated(ref data.ValueRW.PositionCacheA);
+                DisposeIfCreated(ref data.ValueRW.PositionCacheB);
+                DisposeIfCreated(ref data.ValueRW.EntitiesCacheA);
+                DisposeIfCreated(ref data.ValueRW.EntitiesCacheB);
+                DisposeIfCreated(ref data.ValueRW.CellStartsA);
+                DisposeIfCreated(ref data.ValueRW.CellStartsB);
+                DisposeIfCreated(ref data.ValueRW.CellCountsA);
+                DisposeIfCreated(ref data.ValueRW.CellCountsB);
             }
+        }
+        
+        private void DisposeIfCreated<T>(ref NativeArray<T> array) where T : struct
+        {
+            if (array.IsCreated) array.Dispose();
         }
     }
 }
