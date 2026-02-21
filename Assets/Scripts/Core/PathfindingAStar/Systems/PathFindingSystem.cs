@@ -1,6 +1,7 @@
 using Core.Gameplay;
 using Map.Grid;
 using Unity.Burst;
+using Unity.Burst.Intrinsics;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;
@@ -12,162 +13,10 @@ using UnityEngine;
 
 namespace Core.PathfindingAStar
 {
-    public struct AStarCrowd
+    public struct NodeData
     {
-        public static bool FindPath(ref BoxData box, NativeArray<int2> neighbours, float greedyCoef)
-        {
-            ref var grid = ref box.GridBlob.Value;
-
-            if (box.StartPos.Equals(box.Destination))
-            {
-                var indexCell = GridUtils.CoordToIndex(box.Destination, box.DimX);
-                box.Waypoints.Add(new Waypoint
-                {
-                    point = GridUtils.CoordToWorld(ref grid, indexCell)
-                });
-                return false;
-            }
-
-            var startIdx = GridUtils.CoordToIndex(box.StartPos, box.DimX);
-            box.CostSoFar[startIdx] = 0;
-            box.SearchVersions[startIdx] = box.SearchID;
-
-            var H = GridUtils.H_Octile(box.StartPos, box.Destination);
-            float weightedH = H * box.GreedyCoef;
-            box.OpenSet.Push(new BinaryHeapNode(box.StartPos, weightedH, weightedH));
-            float minH = float.MaxValue;
-
-            int2 bestPointSoFar = box.StartPos;
-
-            int counter = 0;
-            while (box.OpenSet.HasNext())
-            {
-                if (counter++ > box.IterationLimit)
-                {
-                    box.Destination = bestPointSoFar;
-                    return true;
-                }
-
-                var current = box.OpenSet.Pop();
-
-                if (current.DistanceToGoal < minH)
-                {
-                    minH = current.DistanceToGoal;
-                    bestPointSoFar = current.Position;
-                }
-
-                if (current.Position.Equals(box.Destination)) return true;
-
-                var fromIndex = GridUtils.CoordToIndex(current.Position, box.DimX);
-                var initialCost = box.CostSoFar[fromIndex];
-
-                for (int i = 0; i < neighbours.Length; i++)
-                {
-                    var step = neighbours[i];
-
-                    var nextPosition = current.Position + step;
-                    if (nextPosition.x < 0 || nextPosition.x >= box.DimX ||
-                        nextPosition.y < 0 || nextPosition.y >= box.DimY) continue;
-
-                    if (step.x != 0 && step.y != 0)
-                    {
-                        int2 side1 = new int2(current.Position.x + step.x, current.Position.y);
-                        int2 side2 = new int2(current.Position.x, current.Position.y + step.y);
-
-                        int idx1 = GridUtils.CoordToIndex(side1, box.DimX);
-                        int idx2 = GridUtils.CoordToIndex(side2, box.DimX);
-
-                        bool wall1 = grid.CellsType[idx1] == CellType.Wall;
-                        bool wall2 = grid.CellsType[idx2] == CellType.Wall;
-
-                        bool inf1 = float.IsInfinity(grid.Weights[idx1]);
-                        bool inf2 = float.IsInfinity(grid.Weights[idx2]);
-
-                        if (wall1 || wall2 || inf1 || inf2)
-                        {
-                            continue;
-                        }
-                    }
-
-                    var toIndex = GridUtils.CoordToIndex(nextPosition, box.DimX);
-                    var cellCost = GetCost(toIndex, i, ref grid);
-
-                    if (float.IsInfinity(cellCost)) continue;
-
-                    var newCost = initialCost + cellCost;
-
-                    bool isUpToDate = box.SearchVersions[toIndex] == box.SearchID;
-                    float oldCost = isUpToDate ? box.CostSoFar[toIndex] : float.MaxValue;
-
-                    if (oldCost > 0 && oldCost <= newCost) continue;
-
-                    box.CostSoFar[toIndex] = newCost;
-                    box.SearchVersions[toIndex] = box.SearchID;
-                    box.CameFrom[toIndex] = current.Position;
-                    var h = GridUtils.H_Octile(nextPosition, box.Destination);
-                    weightedH = h * greedyCoef;
-
-                    float f = newCost + weightedH;
-                    box.OpenSet.Push(new BinaryHeapNode(nextPosition, f, weightedH));
-                }
-            }
-
-            return false;
-        }
-
-        public static void BuildPath(ref GridBlob grid, ref BoxData box)
-        {
-            var ind = GridUtils.CoordToIndex(box.Destination, box.DimX);
-            box.Waypoints.Add(new Waypoint
-            {
-                point = GridUtils.CoordToWorld(ref grid, ind)
-            });
-
-            var currCoord = box.CameFrom[ind];
-            while (!currCoord.Equals(box.StartPos))
-            {
-                int cInd = GridUtils.CoordToIndex(currCoord, box.DimX);
-                box.Waypoints.Add(new Waypoint
-                {
-                    point = GridUtils.CoordToWorld(ref grid, cInd)
-                });
-                currCoord = box.CameFrom[cInd];
-            }
-        }
-
-        private static float GetCost(int gridIndex, int neighborIndex, ref GridBlob grid)
-        {
-            if (grid.CellsType[gridIndex] == CellType.Wall)
-            {
-                return float.PositiveInfinity;
-            }
-
-            //TODO add Weights
-            // float baseWeight = grid.Weights[gridIndex];
-            float baseWeight = 1;
-            float distanceMultiplier = (neighborIndex < 4) ? 1f : 1.414f;
-            return baseWeight * distanceMultiplier;
-        }
-    }
-
-    public struct BoxData
-    {
-        [ReadOnly]
-        public BlobAssetReference<GridBlob> GridBlob;
-        public DynamicBuffer<Waypoint> Waypoints;
-        public int DimX;
-        public int DimY;
-        public int2 StartPos;
-        public int2 Destination;
-        public NativeSlice<float> CostSoFar;
-        public NativeSlice<int2> CameFrom;
-        public NativeBinaryMinHeap OpenSet;
-
-        public NativeSlice<uint> SearchVersions;
-        public uint SearchID;
-
-        public float GreedyCoef;
-        public int IterationLimit;
+        public float Cost;
+        public uint Version;
     }
 
     [UpdateInGroup(typeof(SimulationSystemGroup))]
@@ -176,27 +25,29 @@ namespace Core.PathfindingAStar
     public partial struct PathFindingSystem : ISystem
     {
 #if UNITY_EDITOR
-        private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new("[PF] Player.Pathfinding.Scheduling");
+        private static readonly ProfilerMarker k_ProfilePlayerPathLogic = new ProfilerMarker("[PF] Player.Pathfinding.Scheduling");
 #endif
 
-        private const int VipIterationLimit = 10000;
+        private int _vipIterationLimit;
 
         private EntityQuery _playerQuery;
         private EntityQuery _highPriorityPfQuery;
         private EntityQuery _pathRequestQuery;
         private EntityQuery _gridQuery;
 
-        [ReadOnly] private NativeArray<int2> _neighbours;
-        private NativeArray<float> _costSoFar;
-        private NativeArray<uint> _searchVersions;
+        private ComponentTypeHandle<PFRequestMetadata> _metadataHandle;
+        private ComponentTypeHandle<PFAgentState> _stateHandle;
+        private EntityTypeHandle _entityHandle;
+
+        [ReadOnly]
+        private NativeArray<int2> _neighbours;
+        private NativeArray<int> _indexOffsets;
+        private NativeArray<float> _distMultipliers;
+        private NativeArray<NodeData> _costSoFar;
         private NativeArray<int2> _cameFrom;
         
-#if USE_BINARY_HEAP
-        private NativeMinHeap _openSet;
-#else
         private NativeBinaryMinHeap _openSet;
-#endif
-
+        
         private const int NeighborCount = 8;
 
         private int _currentBufferSize;
@@ -207,40 +58,44 @@ namespace Core.PathfindingAStar
         private ComponentLookup<PFAgentState> _agentStateLookup;
         private ComponentLookup<PFRequestMetadata> _metaLookup;
 
-        private ComponentLookup<GridBlobReference> _gridBlobLookup;
         private BufferLookup<Waypoint> _waypointLookup;
-        
+
         [BurstCompile]
         public void OnCreate(ref SystemState state)
         {
+            state.RequireForUpdate<GridBlobReference>();
             state.RequireForUpdate<GridSettings>();
             state.RequireForUpdate<EndSimulationEntityCommandBufferSystem.Singleton>();
             state.RequireForUpdate<GridTag>();
 
-            _playerQuery = new EntityQueryBuilder(Allocator.Temp)
+            _playerQuery = SystemAPI.QueryBuilder()
                 .WithAllRW<PFRequestAgent>()
                 .WithAllRW<PFRequestMetadata>()
                 .WithAll<PFAgentState>()
                 .WithAll<PlayerTag>()
-                .Build(ref state);
-            
-            _highPriorityPfQuery = new EntityQueryBuilder(Allocator.Temp)
+                .Build();
+
+            _highPriorityPfQuery = SystemAPI.QueryBuilder()
                 .WithAll<PFRequestAgent>()
                 .WithAll<PathfindingHighPriorityTag>()
-                .Build(ref state);
+                .Build();
 
-            _pathRequestQuery = new EntityQueryBuilder(Allocator.Temp)
+            _pathRequestQuery = SystemAPI.QueryBuilder()
                 .WithAllRW<PFRequestAgent>()
                 .WithAllRW<PFRequestMetadata>()
                 .WithAll<PFAgentState>()
                 .WithNone<PlayerTag>()
-                .Build(ref state);
+                .Build();
 
-            _gridQuery = new EntityQueryBuilder(Allocator.Temp)
+            _gridQuery = SystemAPI.QueryBuilder()
                 .WithAll<GridTag, GridBlobReference>()
-                .Build(ref state);
+                .Build();
 
             state.RequireForUpdate(_gridQuery);
+
+            _metadataHandle = state.GetComponentTypeHandle<PFRequestMetadata>(true);
+            _stateHandle = state.GetComponentTypeHandle<PFAgentState>(true);
+            _entityHandle = state.GetEntityTypeHandle();
 
             _neighbours = new NativeArray<int2>(NeighborCount, Allocator.Persistent)
             {
@@ -255,7 +110,20 @@ namespace Core.PathfindingAStar
                 [7] = new int2(-1, -1)
             };
 
-            _gridBlobLookup = state.GetComponentLookup<GridBlobReference>(true);
+            _distMultipliers = new NativeArray<float>(8, Allocator.Persistent)
+            {
+                [0] = 1f,
+                [1] = 1f,
+                [2] = 1f,
+                [3] = 1f,
+                [4] = 1.414f,
+                [5] = 1.414f,
+                [6] = 1.414f,
+                [7] = 1.414f
+            };
+            
+            _vipIterationLimit = 10000;
+            
             _transformLookup = state.GetComponentLookup<LocalTransform>(true);
             _pathRequestLookup = state.GetComponentLookup<PFRequestAgent>(false);
             _navigationTargetLookup = state.GetComponentLookup<NavigationTargetGridData>(true);
@@ -263,7 +131,7 @@ namespace Core.PathfindingAStar
             _waypointLookup = state.GetBufferLookup<Waypoint>(false);
             _agentStateLookup = state.GetComponentLookup<PFAgentState>(false);
             _metaLookup = state.GetComponentLookup<PFRequestMetadata>(false);
-            
+
         }
 
         [BurstCompile]
@@ -272,7 +140,6 @@ namespace Core.PathfindingAStar
             if (!SystemAPI.TryGetSingleton<NavigationSettings>(out var navSettings)) return;
 
             _waypointLookup.Update(ref state);
-            _gridBlobLookup.Update(ref state);
             _transformLookup.Update(ref state);
             _pathRequestLookup.Update(ref state);
             _navigationTargetLookup.Update(ref state);
@@ -280,18 +147,17 @@ namespace Core.PathfindingAStar
             _metaLookup.Update(ref state);
 
             var batchSize = navSettings.InnerLoopBatchSize;
-            var gridEntity = SystemAPI.GetSingletonEntity<GridTag>();
-            var gridBlobRef = _gridBlobLookup[gridEntity].Value;
+            var gridBlobRef = SystemAPI.GetSingleton<GridBlobReference>().Value;
             var dimensions = gridBlobRef.Value.Dimensions;
             int dimX = dimensions.x;
             int dimY = dimensions.y;
             int maxPerFrame = navSettings.MaxPerFrame;
+            int maxRequestsPerFrame = navSettings.MaxRequestsPerFrame;
 
             int targetJitterRange = navSettings.TargetJitterRange;
             int gridSize = dimX * dimY;
 
-            int vipOffset = _highPriorityPfQuery.CalculateEntityCount();
-
+            int vipOffset = math.max(1, _highPriorityPfQuery.CalculateEntityCount());
             int currentPhysicalLimit = _costSoFar.IsCreated ? (_costSoFar.Length / _currentBufferSize) - vipOffset : -1;
 
             bool sizeChanged = gridSize != _currentBufferSize;
@@ -305,13 +171,30 @@ namespace Core.PathfindingAStar
                 _currentBufferSize = gridSize;
                 int totalCapacity = (maxPerFrame + vipOffset) * _currentBufferSize;
 
-                _searchVersions = new NativeArray<uint>(totalCapacity, Allocator.Persistent);
-                _costSoFar = new NativeArray<float>(totalCapacity, Allocator.Persistent);
+                _costSoFar = new NativeArray<NodeData>(totalCapacity, Allocator.Persistent);
                 _cameFrom = new NativeArray<int2>(totalCapacity, Allocator.Persistent);
                 _openSet = new NativeBinaryMinHeap(totalCapacity, Allocator.Persistent);
+
+                _indexOffsets = new NativeArray<int>(8, Allocator.Persistent)
+                {
+                    [0] = -1,
+                    [1] = dimX,
+                    [2] = 1,
+                    [3] = -dimX,
+
+                    [4] = -1 + dimX,
+                    [5] = 1 + dimX,
+                    [6] = 1 - dimX,
+                    [7] = -1 - dimX
+                };
             }
 
             uint uniqueSearchID = state.GlobalSystemVersion * (uint)(maxPerFrame + vipOffset + 1);
+
+            if (uniqueSearchID > uint.MaxValue - 1000)
+            {
+                Debug.LogWarning("[PF] UniqueSearchID CLOSE to max");
+            }
 
 #if UNITY_EDITOR
             using (k_ProfilePlayerPathLogic.Auto())
@@ -331,23 +214,24 @@ namespace Core.PathfindingAStar
                         var playerRequest = SystemAPI.GetComponent<PFRequestAgent>(playerEntity);
                         var playerJobHandle = new PlayerPathJob
                         {
-                            VipIterationLimit = VipIterationLimit,
+                            VipIterationLimit = _vipIterationLimit,
                             GreedyCoef = 1,
                             PlayerEntity = playerEntity,
-                            CostSoFar = _costSoFar,
-                            CameFrom = _cameFrom,
-                            SearchVersions = _searchVersions,
-                            OpenSet = _openSet,
+                            CostSoFar = _costSoFar.Slice(0, _currentBufferSize),
+                            CameFrom = _cameFrom.Slice(0, _currentBufferSize),
+                            OpenSet = _openSet.Slice(0, _currentBufferSize),
                             StartPos = playerRequest.StartCoord,
                             Destination = playerRequest.Destination,
                             Waypoints = _waypointLookup[playerEntity],
                             GridBlob = gridBlobRef,
                             Dimensions = dimensions,
                             Neighbours = _neighbours,
+                            DistMultipliers = _distMultipliers,
+                            IndexOffsets = _indexOffsets,
                             AgentStateLookup = _agentStateLookup,
                             UniqueSearchID = uniqueSearchID
                         }.Schedule(state.Dependency);
-                        
+
                         state.Dependency = playerJobHandle;
                     }
                 }
@@ -359,19 +243,43 @@ namespace Core.PathfindingAStar
             int totalWaiting = _pathRequestQuery.CalculateEntityCount();
             if (totalWaiting == 0) return;
 
-            var sortableList = new NativeList<PathRequestCandidate>(totalWaiting, Allocator.TempJob);
-            
-            var collectJobHandle = new CollectRequestsJob
+            int chunkCount = _pathRequestQuery.CalculateChunkCount();
+            var stream = new NativeStream(chunkCount, Allocator.TempJob);
+
+            _metadataHandle.Update(ref state);
+            _stateHandle.Update(ref state);
+            _entityHandle.Update(ref state);
+
+            var collectByBucketJobHandle = new CollectRequestsByBucketJob
             {
-                SortableList = sortableList.AsParallelWriter()
+                StreamWriter = stream.AsWriter(),
+                MetadataHandle = _metadataHandle,
+                StateHandle = _stateHandle,
+                EntityHandle = _entityHandle
             }.ScheduleParallel(_pathRequestQuery, state.Dependency);
+
+            var finalSortableList = new NativeList<PathRequestCandidate>(maxRequestsPerFrame * 2, Allocator.TempJob);
+
+            var mergeJobHandle = new MergeBucketsJob
+            {
+                StreamReader = stream.AsReader(),
+                FinalList = finalSortableList,
+                MaxToCollect = maxRequestsPerFrame * 2
+            }.Schedule(collectByBucketJobHandle);
+
+            // var sortableList = new NativeList<PathRequestCandidate>(totalWaiting, Allocator.TempJob);
+            //
+            // var collectJobHandle = new CollectRequestsJob
+            // {
+            //     SortableList = sortableList.AsParallelWriter()
+            // }.ScheduleParallel(_pathRequestQuery, state.Dependency);
 
             int physicalLimit = (_costSoFar.Length / _currentBufferSize) - vipOffset;
             int agentsToProcess = math.min(totalWaiting, math.min(maxPerFrame, physicalLimit));
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
 
-            var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJobHandle);
+            // var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJobHandle);
 
             var prepareHandle = new PrepareAndMarkJob
             {
@@ -383,7 +291,7 @@ namespace Core.PathfindingAStar
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
                 FrameCount = Time.frameCount,
 
-                SortedList = sortableList,
+                SortedList = finalSortableList,
                 ProcessingEntities = processingEntities,
                 PathArray = pathArray,
 
@@ -391,7 +299,8 @@ namespace Core.PathfindingAStar
                 AgentStateLookup = _agentStateLookup,
                 NavigationTargetLookup = _navigationTargetLookup,
                 TransformLookup = _transformLookup,
-            }.Schedule(agentsToProcess, batchSize, sortHandle);
+                MetaLookup = _metaLookup,
+            }.Schedule(agentsToProcess, batchSize, mergeJobHandle);
 
             var findHandle = new FindPathAStarJob
             {
@@ -401,6 +310,8 @@ namespace Core.PathfindingAStar
                 GreedyCoef = navSettings.GreedyCoef,
                 IterationLimit = navSettings.IterationLimit,
 
+                CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
+
                 ProcessingEntities = processingEntities,
                 GridStride = _currentBufferSize,
                 WaypointsLookup = _waypointLookup,
@@ -409,20 +320,23 @@ namespace Core.PathfindingAStar
                 AgentStateLookup = _agentStateLookup,
                 MetaLookup = _metaLookup,
                 PathList = pathArray,
-                SearchVersions = _searchVersions,
                 UniqueSearchID = uniqueSearchID,
 
                 CostSoFar = _costSoFar,
                 CameFrom = _cameFrom,
                 OpenSet = _openSet,
                 Neighbours = _neighbours,
+                DistMultipliers = _distMultipliers,
+                IndexOffsets = _indexOffsets,
             }.Schedule(agentsToProcess, batchSize, prepareHandle);
 
             state.Dependency = findHandle;
 
             processingEntities.Dispose(state.Dependency);
             pathArray.Dispose(state.Dependency);
-            sortableList.Dispose(state.Dependency);
+            // sortableList.Dispose(state.Dependency);
+            finalSortableList.Dispose(state.Dependency);
+            state.Dependency = stream.Dispose(state.Dependency);
         }
 
         [BurstCompile]
@@ -430,15 +344,15 @@ namespace Core.PathfindingAStar
         {
             public int VipIterationLimit;
 
-            [ReadOnly] public BlobAssetReference<GridBlob> GridBlob;
+            [ReadOnly]
+            public BlobAssetReference<GridBlob> GridBlob;
 
             public int2 Dimensions;
 
             public float GreedyCoef;
 
-            public NativeArray<float> CostSoFar;
-            public NativeArray<int2> CameFrom;
-            public NativeArray<uint> SearchVersions;
+            public NativeSlice<NodeData> CostSoFar;
+            public NativeSlice<int2> CameFrom;
             public NativeBinaryMinHeap OpenSet;
 
             public int2 StartPos;
@@ -450,35 +364,29 @@ namespace Core.PathfindingAStar
             public Entity PlayerEntity;
             [ReadOnly]
             public NativeArray<int2> Neighbours;
+            [ReadOnly]
+            public NativeArray<float> DistMultipliers;
+            [ReadOnly]
+            public NativeArray<int> IndexOffsets;
+
             public uint UniqueSearchID;
 
             public void Execute()
             {
-                OpenSet.Clear();
-
                 Waypoints.Clear();
-
+                OpenSet.Clear();
                 uint finalSearchID = UniqueSearchID + (uint)PlayerEntity.Index;
 
-                var box = new BoxData
-                {
-                    GridBlob = GridBlob,
-                    DimX = Dimensions.x,
-                    DimY = Dimensions.y,
-                    GreedyCoef = GreedyCoef,
-                    IterationLimit = VipIterationLimit,
-                    StartPos = StartPos,
-                    Destination = Destination,
-                    Waypoints = Waypoints,
+                var box = BoxDataBuilder.Create()
+                    .WithBuffers(CostSoFar, CameFrom, OpenSet)
+                    .WithGrid(GridBlob, Dimensions)
+                    .WithPathPoints(StartPos, Destination)
+                    .WithWaypoints(Waypoints)
+                    .WithSettings(finalSearchID, GreedyCoef, VipIterationLimit)
+                    .Build();
+                
 
-                    CostSoFar = CostSoFar,
-                    CameFrom = CameFrom,
-                    SearchVersions = SearchVersions,
-                    OpenSet = OpenSet,
-                    SearchID = finalSearchID
-                };
-
-                if (AStarCrowd.FindPath(ref box, Neighbours, GreedyCoef))
+                if (AStarCrowd.FindPath(ref box, IndexOffsets, Neighbours, DistMultipliers, GreedyCoef))
                 {
                     AStarCrowd.BuildPath(ref GridBlob.Value, ref box);
 
@@ -491,6 +399,94 @@ namespace Core.PathfindingAStar
                     var state = AgentStateLookup[PlayerEntity];
                     state.Flags = (byte)PFAgentStatus.Idle;
                     AgentStateLookup[PlayerEntity] = state;
+                }
+            }
+        }
+
+        [BurstCompile]
+        private struct CollectRequestsByBucketJob : IJobChunk
+        {
+            public NativeStream.Writer StreamWriter;
+            [ReadOnly]
+            public ComponentTypeHandle<PFRequestMetadata> MetadataHandle;
+            [ReadOnly]
+            public ComponentTypeHandle<PFAgentState> StateHandle;
+            [ReadOnly]
+            public EntityTypeHandle EntityHandle;
+
+            public void Execute(in ArchetypeChunk chunk, int unfilteredChunkIndex, bool useEnabledMask, in v128 chunkEnabledMask)
+            {
+                var metadatas = chunk.GetNativeArray(ref MetadataHandle);
+                var states = chunk.GetNativeArray(ref StateHandle);
+                var entities = chunk.GetNativeArray(EntityHandle);
+
+                StreamWriter.BeginForEachIndex(unfilteredChunkIndex);
+
+                for (int i = 0; i < chunk.Count; i++)
+                {
+                    var state = states[i];
+                    if ((state.Flags & (byte)PFAgentStatus.Find) == 0) continue;
+
+                    var metadata = metadatas[i];
+                    int bucketIndex = 2;
+                    if (metadata.Weight > 400f)
+                    {
+                        bucketIndex = 0;
+                    }
+                    else if (metadata.Weight > 50f)
+                    {
+                        bucketIndex = 1;
+                    }
+
+                    StreamWriter.Write(new PathRequestCandidate
+                    {
+                        Entity = entities[i],
+                        Weight = metadata.Weight,
+                        RequestTime = metadata.RequestTime,
+                        Priority = bucketIndex
+                    });
+                }
+
+                StreamWriter.EndForEachIndex();
+            }
+        }
+
+        [BurstCompile]
+        struct MergeBucketsJob : IJob
+        {
+            public NativeStream.Reader StreamReader;
+            public NativeList<PathRequestCandidate> FinalList;
+            public int MaxToCollect;
+
+            public void Execute()
+            {
+                var b0 = new NativeList<PathRequestCandidate>(MaxToCollect, Allocator.Temp);
+                var b1 = new NativeList<PathRequestCandidate>(MaxToCollect, Allocator.Temp);
+                var b2 = new NativeList<PathRequestCandidate>(MaxToCollect, Allocator.Temp);
+
+                for (int i = 0; i < StreamReader.ForEachCount; i++)
+                {
+                    int count = StreamReader.BeginForEachIndex(i);
+                    for (int j = 0; j < count; j++)
+                    {
+                        var item = StreamReader.Read<PathRequestCandidate>();
+                        if (item.Priority == 0) b0.Add(item);
+                        else if (item.Priority == 1) b1.Add(item);
+                        else b2.Add(item);
+                    }
+                    StreamReader.EndForEachIndex();
+                }
+
+                Combine(b0);
+                Combine(b1);
+                Combine(b2);
+            }
+
+            private void Combine(NativeList<PathRequestCandidate> bucket)
+            {
+                for (int i = 0; i < bucket.Length && FinalList.Length < MaxToCollect; i++)
+                {
+                    FinalList.Add(bucket[i]);
                 }
             }
         }
@@ -544,6 +540,8 @@ namespace Core.PathfindingAStar
             public ComponentLookup<PFRequestAgent> PathRequestLookup;
             [NativeDisableParallelForRestriction]
             public ComponentLookup<PFAgentState> AgentStateLookup;
+            [NativeDisableParallelForRestriction]
+            public ComponentLookup<PFRequestMetadata> MetaLookup;
 
             public void Execute(int i)
             {
@@ -583,11 +581,16 @@ namespace Core.PathfindingAStar
                     var state = AgentStateLookup[entity];
                     state.Flags = (byte)PFAgentStatus.Processing;
 
+                    var meta = MetaLookup[request.Owner];
+
                     float jitter = (entity.Index % 32) * 0.02f;
-                    request.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
+                    meta.NextAllowedUpdateTime = CurrentTime + 0.5f + jitter;
+                    meta.LastProcessedVersion = NavigationTargetLookup[request.Focus].Version;
+                    meta.RequestTime = CurrentTime + 0.5f + jitter;
 
                     PathRequestLookup[entity] = request;
                     AgentStateLookup[entity] = state;
+                    MetaLookup[request.Owner] = meta;
 
                     PathArray[i] = request;
                     ProcessingEntities[i] = entity;
@@ -605,6 +608,8 @@ namespace Core.PathfindingAStar
         [BurstCompile]
         private unsafe struct FindPathAStarJob : IJobParallelFor
         {
+            private static readonly ProfilerMarker Marker = new ProfilerMarker("AStar_SingleAgent");
+
             public int Offset;
             public int2 Dimensions;
 
@@ -612,7 +617,9 @@ namespace Core.PathfindingAStar
 
             public float GreedyCoef;
             public int IterationLimit;
-            
+
+            public float CurrentTime;
+
             [ReadOnly]
             public BlobAssetReference<GridBlob> GridBlob;
             [NativeDisableParallelForRestriction]
@@ -632,9 +639,7 @@ namespace Core.PathfindingAStar
             public ComponentLookup<PFRequestMetadata> MetaLookup;
 
             [NativeDisableParallelForRestriction]
-            public NativeArray<uint> SearchVersions;
-            [NativeDisableParallelForRestriction]
-            public NativeArray<float> CostSoFar;
+            public NativeArray<NodeData> CostSoFar;
             [NativeDisableParallelForRestriction]
             public NativeArray<int2> CameFrom;
             [NativeDisableParallelForRestriction]
@@ -642,6 +647,10 @@ namespace Core.PathfindingAStar
 
             [ReadOnly]
             public NativeArray<int2> Neighbours;
+            [ReadOnly]
+            public NativeArray<float> DistMultipliers;
+            [ReadOnly]
+            public NativeArray<int> IndexOffsets;
             public uint UniqueSearchID;
 
             public void Execute(int index)
@@ -650,7 +659,6 @@ namespace Core.PathfindingAStar
 
                 int actualIndex = index + Offset;
 
-                var searchVersionsSlice = SearchVersions.Slice(actualIndex * GridStride, GridStride);
                 var costSoFarSlice = CostSoFar.Slice(actualIndex * GridStride, GridStride);
                 var cameFromSlice = CameFrom.Slice(actualIndex * GridStride, GridStride);
                 var openSetSlice = OpenSet.Slice(actualIndex * GridStride, GridStride);
@@ -660,6 +668,8 @@ namespace Core.PathfindingAStar
                 openSetSlice.Clear();
 
                 if (request.Owner == Entity.Null) return;
+
+                Marker.Begin();
 
                 if (ActualPathLookup.HasComponent(request.Owner))
                 {
@@ -671,24 +681,15 @@ namespace Core.PathfindingAStar
 
                 uint finalSearchID = UniqueSearchID + (uint)index;
 
-                var box = new BoxData
-                {
-                    GreedyCoef = GreedyCoef,
-                    IterationLimit = IterationLimit,
-                    GridBlob = GridBlob,
-                    Waypoints = waypoints,
-                    DimX = Dimensions.x,
-                    DimY = Dimensions.y,
-                    StartPos = request.StartCoord,
-                    Destination = request.Destination,
-                    CostSoFar = costSoFarSlice,
-                    CameFrom = cameFromSlice,
-                    OpenSet = openSetSlice,
-                    SearchVersions = searchVersionsSlice,
-                    SearchID = finalSearchID,
-                };
+                var box = BoxDataBuilder.Create()
+                    .WithBuffers(costSoFarSlice, cameFromSlice, openSetSlice)
+                    .WithGrid(GridBlob, Dimensions)
+                    .WithPathPoints(request.StartCoord, request.Destination)
+                    .WithWaypoints(waypoints)
+                    .WithSettings(finalSearchID, GreedyCoef, IterationLimit)
+                    .Build();
 
-                if (AStarCrowd.FindPath(ref box, Neighbours, GreedyCoef))
+                if (AStarCrowd.FindPath(ref box, IndexOffsets, Neighbours, DistMultipliers, GreedyCoef))
                 {
                     AStarCrowd.BuildPath(ref GridBlob.Value, ref box);
                     var state = AgentStateLookup[request.Owner];
@@ -708,6 +709,7 @@ namespace Core.PathfindingAStar
                     state.Flags = (byte)PFAgentStatus.Idle;
                     AgentStateLookup[request.Owner] = state;
                 }
+                Marker.End();
             }
         }
 
@@ -715,6 +717,8 @@ namespace Core.PathfindingAStar
         public void OnDestroy(ref SystemState state)
         {
             if (_neighbours.IsCreated) _neighbours.Dispose();
+            if (_distMultipliers.IsCreated) _distMultipliers.Dispose();
+            if (_indexOffsets.IsCreated) _indexOffsets.Dispose();
             DisposePathfindingBuffers();
         }
 
@@ -722,7 +726,6 @@ namespace Core.PathfindingAStar
         {
             if (_costSoFar.IsCreated) _costSoFar.Dispose();
             if (_cameFrom.IsCreated) _cameFrom.Dispose();
-            if (_searchVersions.IsCreated) _searchVersions.Dispose();
             if (_openSet.IsCreated) _openSet.Dispose();
         }
     }

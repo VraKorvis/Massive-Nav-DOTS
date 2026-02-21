@@ -59,7 +59,7 @@ namespace Core.PathfindingAStar
             {
                 if (!TargetLookup.HasComponent(request.Focus)) return;
 
-                if (CurrentTime < request.NextAllowedUpdateTime) return;
+                if (CurrentTime < metadata.NextAllowedUpdateTime) return;
 
                 if ((state.Flags & (byte)PFAgentStatus.Processing) != 0) return;
                 

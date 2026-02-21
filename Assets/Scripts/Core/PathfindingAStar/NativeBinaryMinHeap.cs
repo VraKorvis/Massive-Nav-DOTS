@@ -72,7 +72,9 @@ namespace Core.PathfindingAStar
                 int parent = (idx - 1) / 2;
                 if (buffer[idx].ExpectedCost >= buffer[parent].ExpectedCost) break;
 
-                (buffer[idx], buffer[parent]) = (buffer[parent], buffer[idx]);
+                var temp = buffer[idx];
+                buffer[idx] = buffer[parent];
+                buffer[parent] = temp;
                 idx = parent;
             }
         }
@@ -96,14 +98,20 @@ namespace Core.PathfindingAStar
                 {
                     int left = idx * 2 + 1;
                     int right = idx * 2 + 2;
-                    int smallest = idx;
+                    
+                    if (left >= length) break;
 
-                    if (left < length && buffer[left].ExpectedCost < buffer[smallest].ExpectedCost) smallest = left;
-                    if (right < length && buffer[right].ExpectedCost < buffer[smallest].ExpectedCost) smallest = right;
+                    int smallest = left;
+                    if (right < length)
+                    {
+                        smallest = math.select(left, right, buffer[right].ExpectedCost < buffer[left].ExpectedCost);
+                    }
 
-                    if (smallest == idx) break;
+                    if (buffer[smallest].ExpectedCost >= buffer[idx].ExpectedCost) break;
 
-                    (buffer[idx], buffer[smallest]) = (buffer[smallest], buffer[idx]);
+                    var temp = buffer[idx];
+                    buffer[idx] = buffer[smallest];
+                    buffer[smallest] = temp;
                     idx = smallest;
                 }
             }

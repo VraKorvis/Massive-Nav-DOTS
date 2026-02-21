@@ -65,6 +65,7 @@ Binary      Decimal   Flags set
         public int Priority;
         public uint LastProcessedVersion;
         public float Weight;
+        public float NextAllowedUpdateTime;
     }
 
     public struct PathRequestCandidate
@@ -73,7 +74,6 @@ Binary      Decimal   Flags set
         public float RequestTime;
         public int Priority;
         public float Weight;
-
     }
 
     public struct RequestComparer : IComparer<PathRequestCandidate>
@@ -102,7 +102,6 @@ Binary      Decimal   Flags set
         public Entity Owner;
         public int2 StartCoord;
         public int2 Destination;
-        public float NextAllowedUpdateTime;
     }
 
     public class PFAgentAuthoring : MonoBehaviour
