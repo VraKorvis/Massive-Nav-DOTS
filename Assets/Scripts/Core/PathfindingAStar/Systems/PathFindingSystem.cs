@@ -283,9 +283,7 @@ namespace Core.PathfindingAStar
 
             var prepareHandle = new PrepareAndMarkJob
             {
-                GridOrigin = gridBlobRef.Value.Origin,
-                Cellsize = gridBlobRef.Value.CellSize,
-                Dimensions = gridBlobRef.Value.Dimensions,
+                GridBlob = gridBlobRef,
                 TargetJitterRange = targetJitterRange,
 
                 CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
@@ -309,9 +307,7 @@ namespace Core.PathfindingAStar
                 Dimensions = dimensions,
                 GreedyCoef = navSettings.GreedyCoef,
                 IterationLimit = navSettings.IterationLimit,
-
-                CurrentTime = (float)state.WorldUnmanaged.Time.ElapsedTime,
-
+                
                 ProcessingEntities = processingEntities,
                 GridStride = _currentBufferSize,
                 WaypointsLookup = _waypointLookup,
@@ -340,7 +336,7 @@ namespace Core.PathfindingAStar
         }
 
         [BurstCompile]
-        private unsafe struct PlayerPathJob : IJob
+        private struct PlayerPathJob : IJob
         {
             public int VipIterationLimit;
 
@@ -517,11 +513,11 @@ namespace Core.PathfindingAStar
         private struct PrepareAndMarkJob : IJobParallelFor
         {
             public float CurrentTime;
-            public float3 GridOrigin;
-            public float Cellsize;
-            public int2 Dimensions;
             public int TargetJitterRange;
             public int FrameCount;
+            
+            [ReadOnly]
+            public BlobAssetReference<GridBlob> GridBlob;
 
             [ReadOnly]
             public NativeList<PathRequestCandidate> SortedList;
@@ -569,12 +565,17 @@ namespace Core.PathfindingAStar
                     int jR = TargetJitterRange;
                     int2 offset = random.NextInt2(new int2(-jR, -jR), new int2(jR, jR));
 
-                    request.Destination = math.clamp(rawTarget + offset, 0, Dimensions - 1);
+                    var jittered = math.clamp(rawTarget + offset, 0, GridBlob.Value.Dimensions - 1);
+                    var jitteredIdx = GridUtils.CoordToIndex(jittered, GridBlob.Value.Dimensions.x);
 
+                    request.Destination = GridBlob.Value.CellsType[jitteredIdx] == CellType.Wall 
+                        ? rawTarget  
+                        : jittered;
+                    
                     request.StartCoord = math.clamp(
-                        GridUtils.WorldToCellCoord(pos, GridOrigin, Cellsize),
+                        GridUtils.WorldToCellCoord(pos, GridBlob.Value.Origin, GridBlob.Value.CellSize),
                         0,
-                        Dimensions - 1
+                        GridBlob.Value.Dimensions - 1
                     );
                     request.Owner = entity;
 
@@ -606,7 +607,7 @@ namespace Core.PathfindingAStar
         }
 
         [BurstCompile]
-        private unsafe struct FindPathAStarJob : IJobParallelFor
+        private struct FindPathAStarJob : IJobParallelFor
         {
             private static readonly ProfilerMarker Marker = new ProfilerMarker("AStar_SingleAgent");
 
@@ -617,9 +618,7 @@ namespace Core.PathfindingAStar
 
             public float GreedyCoef;
             public int IterationLimit;
-
-            public float CurrentTime;
-
+            
             [ReadOnly]
             public BlobAssetReference<GridBlob> GridBlob;
             [NativeDisableParallelForRestriction]
