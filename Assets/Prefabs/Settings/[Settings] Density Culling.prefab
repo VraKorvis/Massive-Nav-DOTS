@@ -44,8 +44,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 6bd2554ba04541f48c244443b6f757c4, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::OptRenderer.CullingSettingsAuthoring
-  GlobalThreshold: 50000
-  MaxAgentsPerCell: 100
+  GlobalThreshold: 100000
+  MaxAgentsPerCell: 50
   SafeDistance: 15
-  FadeSpeed: 0.5
+  FadeSpeed: 0.75
   EnableCulling: 1

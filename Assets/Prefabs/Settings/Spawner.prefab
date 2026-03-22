@@ -45,6 +45,6 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::Gameplay.EnemySpawnerAuthoring
   enemyPrefab: {fileID: 6976562289580889069, guid: 06672a50b93d943e7a18b21818d60022, type: 3}
-  count: 50000
+  count: 100000
   batchSize: 1000
   spawnRadius: 7
