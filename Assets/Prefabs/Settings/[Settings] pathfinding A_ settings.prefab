@@ -49,7 +49,7 @@ MonoBehaviour:
   IterationLimit: 300
   GreedyCoef: 1.5
   InnerLoopBatchSize: 1
-  SeparationRadius: 3
-  SeparationWeight: 2
-  SpatialCellSize: 3
+  SeparationRadius: 1
+  SeparationWeight: 3.81
+  SpatialCellSize: 2.05
   TargetJitterRange: 20

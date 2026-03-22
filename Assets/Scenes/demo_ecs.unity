@@ -17,7 +17,7 @@ RenderSettings:
   m_Fog: 0
   m_FogColor: {r: 0.84549654, g: 0.9433962, b: 0.9433962, a: 1}
   m_FogMode: 3
-  m_FogDensity: 0.001
+  m_FogDensity: 0
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
   m_AmbientSkyColor: {r: 0.2578616, g: 0.2578616, b: 0.2578616, a: 1}
@@ -27,7 +27,7 @@ RenderSettings:
   m_AmbientMode: 0
   m_SubtractiveShadowColor: {r: 0.42, g: 0.478, b: 0.627, a: 1}
   m_SkyboxMaterial: {fileID: 10304, guid: 0000000000000000f000000000000000, type: 0}
-  m_HaloStrength: 0.5
+  m_HaloStrength: 0.542
   m_FlareStrength: 1
   m_FlareFadeSpeed: 3
   m_HaloTexture: {fileID: 0}
@@ -93,8 +93,8 @@ LightmapSettings:
     m_ExportTrainingData: 0
     m_TrainingDataDestination: TrainingData
     m_LightProbeSampleCountMultiplier: 4
-  m_LightingDataAsset: {fileID: 112000000, guid: 96c029d97d23047b18a2d2b350415244, type: 2}
-  m_LightingSettings: {fileID: 4890085278179872738, guid: 7e95979ddb6ca4c08b46d42dde56a28c, type: 2}
+  m_LightingDataAsset: {fileID: 0}
+  m_LightingSettings: {fileID: 4890085278179872738, guid: 539075322ff104bf8b5c0631cc3e5775, type: 2}
 --- !u!196 &4
 NavMeshSettings:
   serializedVersion: 2
@@ -216,7 +216,7 @@ Light:
     serializedVersion: 2
     m_Bits: 4294967295
   m_RenderingLayerMask: 1
-  m_Lightmapping: 4
+  m_Lightmapping: 1
   m_LightShadowCasterMode: 0
   m_AreaSize: {x: 1, y: 1}
   m_BounceIntensity: 1
@@ -295,9 +295,25 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 1595218823368993272, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
+      propertyPath: ShowGrid
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 1595218823368993272, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
+      propertyPath: ParentFolder
+      value: 
+      objectReference: {fileID: 1587773242}
+    - target: {fileID: 1595218823368993272, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
       propertyPath: parentFolder
       value: 
       objectReference: {fileID: 1587773242}
+    - target: {fileID: 1595218823368993272, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
+      propertyPath: grassThreshold
+      value: 0.1
+      objectReference: {fileID: 0}
+    - target: {fileID: 1595218823368993272, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
+      propertyPath: grassNoiseScale
+      value: 0.3
+      objectReference: {fileID: 0}
     - target: {fileID: 2663274228693252731, guid: e9a3b3c3e17e34c06b25d90634e1affd, type: 3}
       propertyPath: m_Name
       value: Mapgenerator
@@ -524,13 +540,13 @@ Transform:
   m_PrefabAsset: {fileID: 0}
   m_GameObject: {fileID: 961739749}
   serializedVersion: 2
-  m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 1.5, z: -4}
+  m_LocalRotation: {x: 0.38268343, y: 0, z: 0, w: 0.92387956}
+  m_LocalPosition: {x: 0, y: 48.4, z: -101.5}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
   m_Father: {fileID: 0}
-  m_LocalEulerAnglesHint: {x: 0, y: 0, z: 0}
+  m_LocalEulerAnglesHint: {x: 45, y: 0, z: 0}
 --- !u!114 &961739754
 MonoBehaviour:
   m_ObjectHideFlags: 0
@@ -771,7 +787,7 @@ ReflectionProbe:
   m_Mode: 0
   m_RefreshMode: 0
   m_TimeSlicingMode: 1
-  m_Resolution: 128
+  m_Resolution: 64
   m_UpdateFrequency: 0
   m_BoxSize: {x: 10, y: 10, z: 10}
   m_BoxOffset: {x: 0, y: 3.8, z: 0}
