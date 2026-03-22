@@ -1,3 +1,4 @@
+#if UNITY_EDITOR
 using UnityEngine;
 using Unity.Mathematics;
 
@@ -7,13 +8,13 @@ namespace Map.Generation
     public class TerrainMeshGenerator : MonoBehaviour
     {
         [Header("Grid Sync")]
-        public int2 mapSize = new int2(200, 200);
-        public float cellSize = 1f;
+        public int2 MapSize = new int2(200, 200);
+        public float CellSize = 1f;
 
         [Header("Noise Settings")]
-        public float noiseScale = 0.05f;
-        public float heightMultiplier = 5f;
-        public uint seed = 123;
+        public float NoiseScale = 0.05f;
+        public float HeightMultiplier = 5f;
+        public uint Seed = 123;
 
         [ContextMenu("Generate Terrain")]
         public void Generate()
@@ -21,19 +22,22 @@ namespace Map.Generation
             MeshFilter meshFilter = GetComponent<MeshFilter>();
             MeshCollider meshCollider = GetComponent<MeshCollider>();
 
-            Mesh mesh = new Mesh { name = "ProceduralTerrain" };
+            Mesh mesh = new Mesh
+            {
+                name = "ProceduralTerrain"
+            };
 
-            int resX = mapSize.x + 1;
-            int resY = mapSize.y + 1;
-            
+            int resX = MapSize.x + 1;
+            int resY = MapSize.y + 1;
+
             Vector3[] vertices = new Vector3[resX * resY];
-            int[] triangles = new int[mapSize.x * mapSize.y * 6];
+            int[] triangles = new int[MapSize.x * MapSize.y * 6];
             Vector2[] uvs = new Vector2[vertices.Length];
 
             float3 offset = new float3(
-                (mapSize.x) * cellSize * 0.5f,
+                (MapSize.x) * CellSize * 0.5f,
                 0,
-                (mapSize.y) * cellSize * 0.5f
+                (MapSize.y) * CellSize * 0.5f
             );
 
             for (int y = 0; y < resY; y++)
@@ -41,19 +45,19 @@ namespace Map.Generation
                 for (int x = 0; x < resX; x++)
                 {
                     int index = y * resX + x;
-                    
-                    float n = noise.cnoise(new float2(x, y) * noiseScale + seed);
-                    float h = n * heightMultiplier;
 
-                    vertices[index] = new Vector3(x * cellSize, h, y * cellSize) - (Vector3)offset;
-                    uvs[index] = new Vector2((float)x / mapSize.x, (float)y / mapSize.y);
+                    float n = noise.cnoise(new float2(x, y) * NoiseScale + Seed);
+                    float h = n * HeightMultiplier;
+
+                    vertices[index] = new Vector3(x * CellSize, h, y * CellSize) - (Vector3)offset;
+                    uvs[index] = new Vector2((float)x / MapSize.x, (float)y / MapSize.y);
                 }
             }
 
             int tri = 0;
-            for (int y = 0; y < mapSize.y; y++)
+            for (int y = 0; y < MapSize.y; y++)
             {
-                for (int x = 0; x < mapSize.x; x++)
+                for (int x = 0; x < MapSize.x; x++)
                 {
                     int root = y * resX + x;
                     triangles[tri + 0] = root;
@@ -71,21 +75,19 @@ namespace Map.Generation
             mesh.uv = uvs;
             mesh.RecalculateNormals();
             mesh.RecalculateBounds();
-            
+
             meshFilter.sharedMesh = mesh;
             meshCollider.sharedMesh = mesh;
-            
+
             meshFilter.mesh = mesh;
-            
-            GetComponent<MeshCollider>().sharedMesh = mesh; 
-            
-#if UNITY_EDITOR
+
+            GetComponent<MeshCollider>().sharedMesh = mesh;
+
             UnityEditor.EditorUtility.SetDirty(this);
             UnityEditor.EditorUtility.SetDirty(meshCollider);
-#endif
             Debug.Log("Terrain Generated!");
         }
-        
+
         [ContextMenu("Save Mesh As Asset")]
         public void SaveMesh()
         {
@@ -102,3 +104,4 @@ namespace Map.Generation
         }
     }
 }
+#endif

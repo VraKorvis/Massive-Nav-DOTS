@@ -1,5 +1,4 @@
 using Core.PathfindingAStar;
-using Map.Generation;
 using Unity.Collections;
 using Unity.Collections.LowLevel.Unsafe;
 using Unity.Entities;

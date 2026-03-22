@@ -1,5 +1,4 @@
 using Core.PathfindingAStar;
-using Map.Generation;
 using Unity.Burst;
 using Unity.Collections;
 using Unity.Entities;
@@ -55,5 +54,4 @@ namespace Map.Grid
             }
         }
     }
-
 }

@@ -13,9 +13,8 @@ namespace Core.PathfindingAStar
     [UpdateInGroup(typeof(SimulationSystemGroup))]
     [UpdateAfter(typeof(PathFindingSystem))]
     [BurstCompile]
-    public partial struct PathMovementSystem : ISystem
+    public partial struct PlayerPathMovementSystem : ISystem
     {
-
         public void OnCreate(ref SystemState state)
         {
             state.RequireForUpdate<GridBlobReference>();
@@ -42,6 +41,7 @@ namespace Core.PathfindingAStar
             [ReadOnly]
             public BlobAssetReference<GridBlob> GridBlob;
 
+            [BurstCompile]
             private void Execute(
                 ref DynamicBuffer<Waypoint> way,
                 ref MoveSettings moveData,
@@ -98,8 +98,8 @@ namespace Core.PathfindingAStar
 
                 float slopeMul = 1.0f;
                 slopeMul = slope > 0
-                    ? math.lerp(1.0f, 0.2f, math.saturate(slope / moveData.MaxClimbRateFactor))
-                    : math.lerp(1.0f, 1.2f, math.saturate(-slope));
+                    ? math.lerp(1.0f, moveData.MinSlopeMul, math.saturate(slope / moveData.MaxClimbRateFactor))
+                    : math.lerp(1.0f, moveData.MaxSlopeMul, math.saturate(-slope));
 
                 float weightMul = math.clamp(1.0f / math.max(PhysConst.EPSILON_WEIGHT, smoothWeight), moveData.MinSpeedMul, moveData.MaxSpeedMul);
                 float speed = moveData.Speed * weightMul * slopeMul;

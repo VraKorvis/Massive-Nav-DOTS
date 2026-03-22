@@ -1,3 +1,5 @@
+#if UNITY_EDITOR
+
 using Core;
 using Core.PathfindingAStar;
 using Map.Grid;
@@ -10,41 +12,41 @@ namespace Map.Generation
 {
     public class MapEditorGenerator : MonoBehaviour
     {
-        public GridDataAsset dataAsset;
+        public GridDataAsset DataAsset;
 
         [Header("Assets")]
-        public GameObject[] rockPrefabs;
-        public Transform parentFolder;
+        public GameObject[] RockPrefabs;
+        public Transform ParentFolder;
 
         [Header("Generate Settings")]
-        public int2 mapSize = new int2(200, 200);
-        public float cellSize = 1f;
-        public float noiseScale = 0.1f;
+        public int2 MapSize = new int2(200, 200);
+        public float CellSize = 1f;
+        public float NoiseScale = 0.1f;
         [Range(0, 1)]
-        public float threshold = 0.5f;
+        public float Threshold = 0.5f;
         [Range(0, 2)]
-        public float verticalOffset = 0.5f;
-        public bool hasInflation = false;
-        public float inflationMultiplier = 1f;
-        public float inflationRadius = 1.0f;
-        public float wallAvoidanceRange = 1.2f;
-        
-        public uint seed = 123;
+        public float VerticalOffset = 0.5f;
+        public bool HasInflation = false;
+        public float InflationMultiplier = 1f;
+        public float InflationRadius = 1.0f;
+        public float WallAvoidanceRange = 1.2f;
+
+        public uint Seed = 123;
 
         [Header("Grass Settings")]
-        public GameObject[] grassPrefabs;
-        public float grassNoiseScale = 0.2f;
+        public GameObject[] GrassPrefabs;
+        public float GrassNoiseScale = 0.2f;
         [Range(0, 1)]
-        public float grassThreshold = 0.3f;
-        public bool alignGrassToNormal = false;
+        public float GrassThreshold = 0.3f;
+        public bool AlignGrassToNormal = false;
 
         [Header("Physics & Baking")]
-        public LayerMask groundLayer;
-        public LayerMask obstacleLayer;
+        public LayerMask GroundLayer;
+        public LayerMask ObstacleLayer;
 
         [Range(0f, 1f)]
-        public float walkableSlopeThreshold = 0.91f;
-        public bool showGrid;
+        public float WalkableSlopeThreshold = 0.91f;
+        public bool ShowGrid;
 
         [ContextMenu("Generate World")]
         private void GenerateWorld()
@@ -54,13 +56,13 @@ namespace Map.Generation
             GenerateGrass();
             AnalyzeGrid();
         }
-        
+
         private void GenerateRock()
         {
-            if (parentFolder == null || rockPrefabs.Length == 0) return;
+            if (ParentFolder == null || RockPrefabs.Length == 0) return;
 
             int layerIndex = 0;
-            int layerMaskValue = obstacleLayer.value;
+            int layerMaskValue = ObstacleLayer.value;
             for (int i = 0; i < 32; i++)
             {
                 if ((layerMaskValue >> i & 1) == 1)
@@ -70,31 +72,31 @@ namespace Map.Generation
                 }
             }
 
-            var rand = new Unity.Mathematics.Random(seed);
+            var rand = new Unity.Mathematics.Random(Seed);
 
-            float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
+            float3 offset = new float3((MapSize.x - 1) * CellSize * 0.5f, 0, (MapSize.y - 1) * CellSize * 0.5f);
             Vector3 startPos = transform.position - (Vector3)offset;
 
             GameObject parentRock = new GameObject("Rocks");
-            parentRock.transform.SetParent(parentFolder);
-            
+            parentRock.transform.SetParent(ParentFolder);
+
             Collider[] results = new Collider[1];
-            
-            for (int x = 0; x < mapSize.x; x++)
+
+            for (int x = 0; x < MapSize.x; x++)
             {
-                for (int y = 0; y < mapSize.y; y++)
+                for (int y = 0; y < MapSize.y; y++)
                 {
-                    float n = noise.cnoise(new float2(x, y) * noiseScale);
-                    if (n > threshold)
+                    float n = noise.cnoise(new float2(x, y) * NoiseScale);
+                    if (n > Threshold)
                     {
-                        GameObject prefab = rockPrefabs[rand.NextInt(0, rockPrefabs.Length)];
-                        
-                        Vector3 pos = startPos + new Vector3(x * cellSize, 0, y * cellSize);
+                        GameObject prefab = RockPrefabs[rand.NextInt(0, RockPrefabs.Length)];
+
+                        Vector3 pos = startPos + new Vector3(x * CellSize, 0, y * CellSize);
                         float3 rayStart = new float3(pos.x, 100f, pos.z);
 
                         Quaternion randomRot = Quaternion.Euler(0, rand.NextFloat(0, 360), 0);
 
-                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, groundLayer))
+                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, GroundLayer))
                         {
                             float rockRadius = 1.0f;
                             MeshFilter mf = prefab.GetComponentInChildren<MeshFilter>();
@@ -104,15 +106,15 @@ namespace Map.Generation
                                 rockRadius = math.max(extents.x, extents.z);
                             }
                             float checkRadius = rockRadius * 0.6f;
-                            
-                            Vector3 finalPos = hit.point + (hit.normal * verticalOffset);
 
-                            int overlapCount = Physics.OverlapSphereNonAlloc(finalPos, checkRadius, results, obstacleLayer);
-    
+                            Vector3 finalPos = hit.point + (hit.normal * VerticalOffset);
+
+                            int overlapCount = Physics.OverlapSphereNonAlloc(finalPos, checkRadius, results, ObstacleLayer);
+
                             if (overlapCount > 0) continue;
-                            
+
                             Quaternion finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
-                            
+
                             GameObject instance = Instantiate(prefab, finalPos, finalRot);
 
                             // instance.hideFlags = HideFlags.DontSave | HideFlags.HideInHierarchy;
@@ -149,36 +151,36 @@ namespace Map.Generation
 
         private void GenerateGrass()
         {
-            if (parentFolder == null || grassPrefabs.Length == 0) return;
+            if (ParentFolder == null || GrassPrefabs.Length == 0) return;
 
-            var rand = new Unity.Mathematics.Random(seed + 1);
+            var rand = new Unity.Mathematics.Random(Seed + 1);
 
-            float3 offset = new float3((mapSize.x - 1) * cellSize * 0.5f, 0, (mapSize.y - 1) * cellSize * 0.5f);
+            float3 offset = new float3((MapSize.x - 1) * CellSize * 0.5f, 0, (MapSize.y - 1) * CellSize * 0.5f);
             Vector3 startPos = transform.position - (Vector3)offset;
 
             GameObject parentGrass = new GameObject("Grass");
-            parentGrass.transform.SetParent(parentFolder);
-            
-            for (int x = 0; x < mapSize.x; x++)
-            {
-                for (int y = 0; y < mapSize.y; y++)
-                {
-                    float n = noise.cnoise(new float2(x, y) * grassNoiseScale);
+            parentGrass.transform.SetParent(ParentFolder);
 
-                    if (n > grassThreshold)
+            for (int x = 0; x < MapSize.x; x++)
+            {
+                for (int y = 0; y < MapSize.y; y++)
+                {
+                    float n = noise.cnoise(new float2(x, y) * GrassNoiseScale);
+
+                    if (n > GrassThreshold)
                     {
-                        GameObject prefab = grassPrefabs[rand.NextInt(0, grassPrefabs.Length)];
-                        Vector3 posXZ = startPos + new Vector3(x * cellSize, 0, y * cellSize);
+                        GameObject prefab = GrassPrefabs[rand.NextInt(0, GrassPrefabs.Length)];
+                        Vector3 posXZ = startPos + new Vector3(x * CellSize, 0, y * CellSize);
                         float3 rayStart = new float3(posXZ.x, 100f, posXZ.z);
 
-                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, groundLayer))
+                        if (Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 200f, GroundLayer))
                         {
                             Vector3 finalPos = hit.point;
 
                             Quaternion randomRot = Quaternion.Euler(0, rand.NextFloat(0, 360), 0);
                             Quaternion finalRot;
 
-                            if (alignGrassToNormal)
+                            if (AlignGrassToNormal)
                             {
                                 finalRot = Quaternion.FromToRotation(Vector3.up, hit.normal) * randomRot;
                             }
@@ -218,87 +220,87 @@ namespace Map.Generation
         {
             Physics.SyncTransforms();
 
-            if (dataAsset == null) return;
+            if (DataAsset == null) return;
 
-            if (!GridValidator.Validate(dataAsset)) return;
-            
-            int width = mapSize.x;
-            int height = mapSize.y;
+            if (!GridValidator.Validate(DataAsset)) return;
+
+            int width = MapSize.x;
+            int height = MapSize.y;
             int total = width * height;
 
-            float3 offset = new float3((width - 1) * cellSize * 0.5f, 0, (height - 1) * cellSize * 0.5f);
+            float3 offset = new float3((width - 1) * CellSize * 0.5f, 0, (height - 1) * CellSize * 0.5f);
             float3 cornerOrigin = (float3)transform.position - offset;
 
-            dataAsset.Dimensions = mapSize;
-            dataAsset.CellSize = cellSize;
-            dataAsset.Origin = cornerOrigin;
-            dataAsset.Heights = new float[total];
-            dataAsset.Normals = new float3[total];
-            dataAsset.CellsType = new CellType[total];
-            dataAsset.Weights = new float[total];
-            dataAsset.WallPush = new float3[total];
+            DataAsset.Dimensions = MapSize;
+            DataAsset.CellSize = CellSize;
+            DataAsset.Origin = cornerOrigin;
+            DataAsset.Heights = new float[total];
+            DataAsset.Normals = new float3[total];
+            DataAsset.CellsType = new CellType[total];
+            DataAsset.Weights = new float[total];
+            DataAsset.WallPush = new float3[total];
 
             BakeTerrainParams(cornerOrigin, width, height, total);
-            
+
             // BakeWallPushField(width, height);
             BakeWallPushGradientField(width, height);
             ApplyWallInflation(total, width, height);
 
-            dataAsset.hasData = true;
-            EditorUtility.SetDirty(dataAsset);
+            DataAsset.hasData = true;
+            EditorUtility.SetDirty(DataAsset);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
             Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
         }
-        
+
         private void BakeTerrainParams(float3 cornerOrigin, int width, int height, int total)
         {
             for (int i = 0; i < total; i++)
             {
                 int2 coord = new int2(i % width, i / width);
-                float3 cellCenterGround = cornerOrigin + new float3(coord.x * cellSize, 0, coord.y * cellSize);
+                float3 cellCenterGround = cornerOrigin + new float3(coord.x * CellSize, 0, coord.y * CellSize);
 
-                float3 planeCenter = cornerOrigin + new float3(coord.x * cellSize, 0, coord.y * cellSize);
+                float3 planeCenter = cornerOrigin + new float3(coord.x * CellSize, 0, coord.y * CellSize);
 
                 float3 rayStart = cellCenterGround + new float3(0, 50f, 0);
-                bool hitSurface = Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 100f, groundLayer);
-                dataAsset.Heights[i] = hitSurface ? hit.point.y : cornerOrigin.y;
-                dataAsset.Normals[i] = hitSurface ? hit.normal : new float3(0, 1, 0);
+                bool hitSurface = Physics.Raycast(rayStart, Vector3.down, out RaycastHit hit, 100f, GroundLayer);
+                DataAsset.Heights[i] = hitSurface ? hit.point.y : cornerOrigin.y;
+                DataAsset.Normals[i] = hitSurface ? hit.normal : new float3(0, 1, 0);
 
-                float3 obstacleCheckCenter = new float3(planeCenter.x, dataAsset.Heights[i] + 1.0f, planeCenter.z);
+                float3 obstacleCheckCenter = new float3(planeCenter.x, DataAsset.Heights[i] + 1.0f, planeCenter.z);
 
-                float3 halfExtents = new float3(cellSize * 0.48f, 1.5f, cellSize * 0.48f);
+                float3 halfExtents = new float3(CellSize * 0.48f, 1.5f, CellSize * 0.48f);
 
-                bool isObstacle = Physics.CheckBox(obstacleCheckCenter, halfExtents, Quaternion.identity, obstacleLayer);
+                bool isObstacle = Physics.CheckBox(obstacleCheckCenter, halfExtents, Quaternion.identity, ObstacleLayer);
 
                 bool isEdge = (coord.x == 0 || coord.y == 0 || coord.x == width - 1 || coord.y == height - 1);
-                bool isTooSteep = hitSurface && (math.dot(dataAsset.Normals[i], new float3(0, 1, 0)) < walkableSlopeThreshold);
+                bool isTooSteep = hitSurface && (math.dot(DataAsset.Normals[i], new float3(0, 1, 0)) < WalkableSlopeThreshold);
 
                 if (isObstacle || isEdge || isTooSteep)
                 {
-                    dataAsset.CellsType[i] = CellType.Wall;
-                    dataAsset.Weights[i] = float.PositiveInfinity;
+                    DataAsset.CellsType[i] = CellType.Wall;
+                    DataAsset.Weights[i] = float.PositiveInfinity;
                 }
                 else
                 {
-                    dataAsset.CellsType[i] = CellType.Ground;
-                    dataAsset.Weights[i] = 1.0f;
+                    DataAsset.CellsType[i] = CellType.Ground;
+                    DataAsset.Weights[i] = 1.0f;
                 }
             }
         }
 
         private void BakeWallPushField(int width, int height)
         {
-       
+
             for (int y = 0; y < height; y++)
             {
                 for (int x = 0; x < width; x++)
                 {
                     int index = y * width + x;
-                    
-                    if (dataAsset.CellsType[index] == CellType.Wall) continue;
 
-                    float3 currentCellPos = dataAsset.Origin + new float3(x * dataAsset.CellSize, 0, y * dataAsset.CellSize);
+                    if (DataAsset.CellsType[index] == CellType.Wall) continue;
+
+                    float3 currentCellPos = DataAsset.Origin + new float3(x * DataAsset.CellSize, 0, y * DataAsset.CellSize);
                     float3 totalPush = float3.zero;
 
                     for (int nx = -1; nx <= 1; nx++)
@@ -311,14 +313,14 @@ namespace Map.Generation
                             if (neighborX >= 0 && neighborX < width && neighborZ >= 0 && neighborZ < height)
                             {
                                 int nIndex = neighborZ * width + neighborX;
-                                if (dataAsset.CellsType[nIndex] == CellType.Wall)
+                                if (DataAsset.CellsType[nIndex] == CellType.Wall)
                                 {
-                                    float3 wallPos = dataAsset.Origin + new float3(neighborX * dataAsset.CellSize, 0, neighborZ * dataAsset.CellSize);
+                                    float3 wallPos = DataAsset.Origin + new float3(neighborX * DataAsset.CellSize, 0, neighborZ * DataAsset.CellSize);
                                     float3 toCell = currentCellPos - wallPos;
                                     toCell.y = 0;
                                     float dist = math.length(toCell);
 
-                                    float wallPushRadius = dataAsset.CellSize * wallAvoidanceRange;
+                                    float wallPushRadius = DataAsset.CellSize * WallAvoidanceRange;
                                     if (dist < wallPushRadius)
                                     {
                                         totalPush += (toCell / (dist + 0.001f)) * (wallPushRadius - dist);
@@ -327,20 +329,22 @@ namespace Map.Generation
                             }
                         }
                     }
-                    dataAsset.WallPush[index] = totalPush;
+                    DataAsset.WallPush[index] = totalPush;
                 }
             }
         }
-        
+
         private void BakeWallPushGradientField(int width, int height)
         {
             float[] distField = new float[width * height];
-            
-            for (int i = 0; i < distField.Length; i++)
-                distField[i] = (dataAsset.CellsType[i] == CellType.Wall) ? 0f : 1000f;
 
-            for (int y = 1; y < height; y++) {
-                for (int x = 1; x < width; x++) {
+            for (int i = 0; i < distField.Length; i++)
+                distField[i] = (DataAsset.CellsType[i] == CellType.Wall) ? 0f : 1000f;
+
+            for (int y = 1; y < height; y++)
+            {
+                for (int x = 1; x < width; x++)
+                {
                     int i = y * width + x;
                     if (distField[i] == 0) continue;
                     float d1 = distField[i - 1] + 1f;
@@ -349,8 +353,10 @@ namespace Map.Generation
                 }
             }
 
-            for (int y = height - 2; y >= 0; y--) {
-                for (int x = width - 2; x >= 0; x--) {
+            for (int y = height - 2; y >= 0; y--)
+            {
+                for (int x = width - 2; x >= 0; x--)
+                {
                     int i = y * width + x;
                     if (distField[i] == 0) continue;
                     float d1 = distField[i + 1] + 1f;
@@ -361,21 +367,27 @@ namespace Map.Generation
 
             float maxDistance = 1.0f;
 
-            for (int y = 1; y < height - 1; y++) {
-                for (int x = 1; x < width - 1; x++) {
+            for (int y = 1; y < height - 1; y++)
+            {
+                for (int x = 1; x < width - 1; x++)
+                {
                     int i = y * width + x;
-                    if (dataAsset.CellsType[i] == CellType.Wall) continue;
+                    if (DataAsset.CellsType[i] == CellType.Wall) continue;
 
-                    if (distField[i] < maxDistance) {
+                    if (distField[i] < maxDistance)
+                    {
                         float dx = distField[i + 1] - distField[i - 1];
                         float dz = distField[i + width] - distField[i - width];
-    
+
                         float3 grad = new float3(dx, 0, dz);
-                        if (math.lengthsq(grad) > 0.0001f) {
-                            dataAsset.WallPush[i] = math.normalize(grad); 
+                        if (math.lengthsq(grad) > 0.0001f)
+                        {
+                            DataAsset.WallPush[i] = math.normalize(grad);
                         }
-                    } else {
-                        dataAsset.WallPush[i] = float3.zero;
+                    }
+                    else
+                    {
+                        DataAsset.WallPush[i] = float3.zero;
                     }
                 }
             }
@@ -383,10 +395,10 @@ namespace Map.Generation
 
         private void ApplyWallInflation(int total, int width, int height)
         {
-            if (inflationRadius > 0 && hasInflation)
+            if (InflationRadius > 0 && HasInflation)
             {
-                int range = (int)math.ceil(inflationRadius);
-                CellType[] tempTypes = (CellType[])dataAsset.CellsType.Clone();
+                int range = (int)math.ceil(InflationRadius);
+                CellType[] tempTypes = (CellType[])DataAsset.CellsType.Clone();
                 for (int i = 0; i < total; i++)
                 {
                     if (tempTypes[i] == CellType.Wall)
@@ -400,8 +412,8 @@ namespace Map.Generation
                                 if (neighbor.x >= 0 && neighbor.x < width && neighbor.y >= 0 && neighbor.y < height)
                                 {
                                     int nIndex = neighbor.y * width + neighbor.x;
-                                    if (dataAsset.CellsType[nIndex] != CellType.Wall)
-                                        dataAsset.Weights[nIndex] = math.max(dataAsset.Weights[nIndex], inflationMultiplier);
+                                    if (DataAsset.CellsType[nIndex] != CellType.Wall)
+                                        DataAsset.Weights[nIndex] = math.max(DataAsset.Weights[nIndex], InflationMultiplier);
                                 }
                             }
                         }
@@ -413,55 +425,58 @@ namespace Map.Generation
         [ContextMenu("Clear Map")]
         public void Clear()
         {
-            if (parentFolder == null) return;
-            Undo.RegisterCompleteObjectUndo(parentFolder, "Clear Map");
-            for (int i = parentFolder.childCount - 1; i >= 0; i--)
+            if (ParentFolder == null) return;
+            Undo.RegisterCompleteObjectUndo(ParentFolder, "Clear Map");
+            for (int i = ParentFolder.childCount - 1; i >= 0; i--)
             {
-                DestroyImmediate(parentFolder.GetChild(i).gameObject);
+                DestroyImmediate(ParentFolder.GetChild(i).gameObject);
             }
 
-            if (dataAsset != null)
+            if (DataAsset != null)
             {
-                dataAsset.hasData = false;
-                EditorUtility.SetDirty(dataAsset);
+                DataAsset.hasData = false;
+                EditorUtility.SetDirty(DataAsset);
             }
+#if UNITY_EDITOR
             EditorSceneManager.MarkSceneDirty(gameObject.scene);
+#endif
             Debug.Log("Map cleared.");
         }
 
         private void OnDrawGizmos()
         {
-            if (dataAsset == null || !dataAsset.hasData) return;
+            if (DataAsset == null || !DataAsset.hasData) return;
 
             Color wallColor = new Color(1.0f, 0.0f, 0.0f, 0.70f);
             Color groundColor = new Color(0.0f, 1.0f, 1.0f, 0.25f);
             Color groundWeights = new Color(1f, 0.8f, 0.1f, 0.25f);
 
-            for (int i = 0; i < dataAsset.CellsType.Length; i++)
+            for (int i = 0; i < DataAsset.CellsType.Length; i++)
             {
-                int2 coord = new int2(i % dataAsset.Dimensions.x, i / dataAsset.Dimensions.x);
-                Vector3 pos = (Vector3)dataAsset.Origin + new Vector3(coord.x * dataAsset.CellSize, dataAsset.Heights[i] + 0.1f, coord.y * dataAsset.CellSize);
+                int2 coord = new int2(i % DataAsset.Dimensions.x, i / DataAsset.Dimensions.x);
+                Vector3 pos = (Vector3)DataAsset.Origin + new Vector3(coord.x * DataAsset.CellSize, DataAsset.Heights[i] + 0.1f, coord.y * DataAsset.CellSize);
 
-                Vector3 normal = dataAsset.Normals[i];
+                Vector3 normal = DataAsset.Normals[i];
                 Quaternion rotation = Quaternion.FromToRotation(Vector3.up, normal);
 
-                pos.y = dataAsset.Heights[i] + 0.2f;
+                pos.y = DataAsset.Heights[i] + 0.2f;
                 Matrix4x4 cubeMatrix = Matrix4x4.TRS(pos, rotation, Vector3.one);
                 Gizmos.matrix = cubeMatrix;
 
-                if (dataAsset.CellsType[i] == CellType.Wall)
+                if (DataAsset.CellsType[i] == CellType.Wall)
                 {
                     Gizmos.color = wallColor;
-                    Gizmos.DrawCube(Vector3.zero, new Vector3(dataAsset.CellSize, 0.2f, dataAsset.CellSize));
-                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(dataAsset.CellSize, 0.05f, dataAsset.CellSize));
+                    Gizmos.DrawCube(Vector3.zero, new Vector3(DataAsset.CellSize, 0.2f, DataAsset.CellSize));
+                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(DataAsset.CellSize, 0.05f, DataAsset.CellSize));
                 }
-                else if (showGrid)
+                else if (ShowGrid)
                 {
-                    Gizmos.color = dataAsset.Weights[i] > 1.0f ? groundWeights : groundColor;
-                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(dataAsset.CellSize * 0.9f, 0.1f, dataAsset.CellSize * 0.9f));
+                    Gizmos.color = DataAsset.Weights[i] > 1.0f ? groundWeights : groundColor;
+                    Gizmos.DrawWireCube(Vector3.zero, new Vector3(DataAsset.CellSize * 0.9f, 0.1f, DataAsset.CellSize * 0.9f));
                 }
             }
             Gizmos.matrix = Matrix4x4.identity;
         }
     }
 }
+#endif

@@ -139,7 +139,7 @@ namespace Core.PathfindingAStar
                 int cInd = GridUtils.CoordToIndex(currCoord, box.DimX);
                 if (iter++ > safety)
                 {
-                    Debug.LogWarning($"[PF] LOOP break: currCoord={currCoord}, nextCoord={box.CameFrom[cInd]}, version={box.CostSoFar[cInd].Version}, searchID={box.SearchID}");
+                    // TODO: replace with NativeQueue<DebugEvent> for production diagnostics, Safety counter exceeded - path reconstruction aborted
                     break;
                 }
                 box.Waypoints.Add(new Waypoint
@@ -149,7 +149,7 @@ namespace Core.PathfindingAStar
                 currCoord = box.CameFrom[cInd];
             }
         }
-        
+
         private static float GetCost(int gridIndex, int neighborIndex, NativeArray<float> distMultipliers, ref GridBlob grid)
         {
             //TODO add Weights

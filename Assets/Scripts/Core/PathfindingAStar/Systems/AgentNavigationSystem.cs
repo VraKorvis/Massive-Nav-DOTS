@@ -163,7 +163,7 @@ namespace Core.PathfindingAStar
                     {
                         pbdDisplacement = AgentMovement.ComputePbdDisplacement(ref grid, pos, ctx, DeltaTime);
                     }
-                    float desiredSpeed = AgentMovement.ComputeDesiredSpeed( ref grid, in moveData, pos, moveData.Speed, targetPos, arrivalRadius);
+                    float desiredSpeed = AgentMovement.ComputeDesiredSpeed(ref grid, in moveData, pos, moveData.Speed, targetPos, arrivalRadius);
                     float3 nextPos = AgentMovement.ComputeNextPos(ref moveData, pos, targetPos, pbdDisplacement, desiredSpeed, DeltaTime);
                     nextPos = AgentMovement.ComputeWallSliding(ref grid, ref moveData,pos, nextPos, DeltaTime);
                     transform.Position = AgentMovement.ComputeMovement(ref grid, ref moveData, pos, nextPos, DeltaTime);

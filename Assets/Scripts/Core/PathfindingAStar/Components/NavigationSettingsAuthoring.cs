@@ -53,7 +53,7 @@ namespace Core.PathfindingAStar
         public float SeparationWeight = 2f;
 
         [Tooltip("Spatial Hash cell size. Recommended: separationRadius * 2.0 for optimal performance.")]
-        [Range(1f, 4.0f)]
+        [Range(1f, 10.0f)]
         public float SpatialCellSize = 3f;
         
         [Tooltip("Target Jitter Range")]
