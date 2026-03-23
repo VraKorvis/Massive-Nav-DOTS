@@ -34,19 +34,19 @@ The simulation is strictly DOTS-based, leveraging the Burst Compiler and Job Sys
 * **Performance**: Extremely smooth, high FPS.
 * **Profiler**: Burst-compiled jobs consume minimal time per frame.
 
-![Profiler 10k](Documentation~/Benchmarks/profiler_10k.png)
+![Profiler 10k](Documentation/Benchmarks/profiler_10k.png)
 
 ### 2. 50,000 Agents (Scalability Test)
 * **Performance**: Stable performance with multiple job worker threads fully utilized.
 * **Analysis**: High-load scenario. Core systems (Parallel A*, PBD, and NativeBinaryMinHeap) operate with zero managed allocations. The primary bottleneck at this scale is **GPU Overdraw** due to entity density.
 
-![Profiler 50k](Documentation~/Benchmarks/profiler_50k.png)
+![Profiler 50k](Documentation/Benchmarks/profiler_50k.png)
 
 ### 3. 100,000 Agents (Stress Test)
 * **Performance**: Maintaining ~40+ FPS (including Editor overhead).
 * **Profiler**: Core systems remain optimized with zero managed allocations, demonstrating the efficiency of the **NativeBinaryMinHeap** and PBD implementation.
 
-![Profiler 100k](Documentation~/Benchmarks/profiler_100k.png)
+![Profiler 100k](Documentation/Benchmarks/profiler_100k.png)
 
 
 > The simulation is CPU-efficient with significant headroom. Performance fluctuations at 100k+ are primarily GPU-bound.
