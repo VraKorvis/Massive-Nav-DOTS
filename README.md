@@ -26,23 +26,52 @@ To run the simulation in the Unity Editor, follow these steps:
 
 ---
 
+## 📊 Performance Benchmarks (Apple M1 Pro)
+
+The simulation is strictly DOTS-based, leveraging the Burst Compiler and Job System to distribute the load across all available CPU cores. Below are the profiler captures for different agent counts, demonstrating stable performance under massive stress.
+
+### 1. 10,000 Agents (Base Load)
+* **Performance**: Extremely smooth, high FPS.
+* **Profiler**: Burst-compiled jobs consume minimal time per frame.
+
+![Profiler 10k](Documentation~/Benchmarks/profiler_10k.png)
+
+### 2. 50,000 Agents (Scalability Test)
+* **Performance**: Stable performance with multiple job worker threads fully utilized.
+* **Analysis**: High-load scenario. Core systems (Parallel A*, PBD, and NativeBinaryMinHeap) operate with zero managed allocations. The primary bottleneck at this scale is **GPU Overdraw** due to entity density.
+
+![Profiler 50k](Documentation~/Benchmarks/profiler_50k.png)
+
+### 3. 100,000 Agents (Stress Test)
+* **Performance**: Maintaining ~40+ FPS (including Editor overhead).
+* **Profiler**: Core systems remain optimized with zero managed allocations, demonstrating the efficiency of the **NativeBinaryMinHeap** and PBD implementation.
+
+![Profiler 100k](Documentation~/Benchmarks/profiler_100k.png)
+
+
+> The simulation is CPU-efficient with significant headroom. Performance fluctuations at 100k+ are primarily GPU-bound.
+
+> **Note**: These metrics were captured within the Unity 6 Editor on an Apple M1 Pro. Expect significantly higher performance in a standalone build.
+
+---
+
 ## Project Overview
 This is a performance-first navigation engine built strictly on the **Unity DOTS** stack, focusing on high-density agent simulations.
 
 ### Key Features
 * **Data-Oriented Design**: Built 100% using ECS, Job System, and Burst Compiler. [Stable]
-* **Spatial Partitioning**: Custom Spatial Hash implementation for $O(1)$ neighbor lookups and PBD collision resolution. [Stable]
-* **Pathfinding**: High-speed Parallel A* implementation with Burst-friendly data structures. [Stable]
-* **Custom Native Containers**: Includes a hand-optimized **NativeBinaryMinHeap** implemented via `UnsafeUtility`. Features $O(\log n)$ push/pop with zero managed overhead and branchless optimization (`math.select`) for Burst. [Stable]
-* **PBD Physics**: Position Based Dynamics for smooth agent-to-agent pushing and separation. [Stable]
+* **PBD & Spatial Hashing:** Agent separation using Position Based Dynamics with $O(1)$ grid-based neighbor lookups. Optimized with fixed-neighbor limits for stable performance in high-density scenarios. [Stable]
+* **Parallel A star Pathfinding**: Multi-threaded implementation using a custom **NativeBinaryMinHeap**. Optimized with `math.select` to eliminate branch prediction overhead in the heap's sift-down operations. [Stable]
 * **Flow Field Navigation**: Researching potential for large-scale directional grids to further reduce pathfinding overhead in high-density scenarios. [Planned]
-* **HPA* (Hierarchical Pathfinding)**: Advanced optimization for large-scale maps. [Planned]
+* **HPA (Hierarchical Pathfinding)**: Advanced optimization for large-scale maps. [Planned]
 
 ### Performance & Optimization
 * **Massive-Scale Parallelism**: Fully Burst-compiled Job System (IJobEntity/IJobChunk) distributing load across all available CPU cores.
 * **Zero Managed Allocations**: The core simulation loop runs entirely on unmanaged memory using Native Containers, ensuring no GC spikes.
 * **Efficient Memory Layout**: Optimized for cache locality to maximize CPU throughput.
-* **Real-time Metrics**: Maintaining ~40+ FPS with 100,000 active agents on Apple M1 Pro (including Editor overhead).
+  - Morton Encoding: Used for spatial data indexing to maximize L1/L2 cache hits during neighbor searches.
+  - Double Buffering: Swap-buffer logic for Morton codes to prevent race conditions.
+* **Real-time Metrics**: Maintaining ~30-40+ FPS with 100,000 active agents on Apple M1 Pro (including Editor overhead).
 
 ### Current Tech Stack
 * **Engine**: Unity 6000.2.7f+
