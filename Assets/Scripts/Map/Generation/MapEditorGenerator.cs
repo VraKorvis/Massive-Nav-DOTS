@@ -1,12 +1,12 @@
-#if UNITY_EDITOR
-
 using Core;
 using Core.PathfindingAStar;
 using Map.Grid;
 using UnityEngine;
 using Unity.Mathematics;
+#if UNITY_EDITOR
 using UnityEditor;
 using UnityEditor.SceneManagement;
+#endif
 
 namespace Map.Generation
 {
@@ -247,9 +247,12 @@ namespace Map.Generation
             ApplyWallInflation(total, width, height);
 
             DataAsset.hasData = true;
+#if UNITY_EDITOR
+
             EditorUtility.SetDirty(DataAsset);
             AssetDatabase.SaveAssets();
             AssetDatabase.Refresh();
+#endif
             Debug.Log("<color=green>Grid analyzed successfully using SO.</color>");
         }
 
@@ -426,17 +429,21 @@ namespace Map.Generation
         public void Clear()
         {
             if (ParentFolder == null) return;
+#if UNITY_EDITOR
             Undo.RegisterCompleteObjectUndo(ParentFolder, "Clear Map");
+#endif
             for (int i = ParentFolder.childCount - 1; i >= 0; i--)
             {
                 DestroyImmediate(ParentFolder.GetChild(i).gameObject);
             }
-
             if (DataAsset != null)
             {
                 DataAsset.hasData = false;
+#if UNITY_EDITOR
                 EditorUtility.SetDirty(DataAsset);
+#endif
             }
+
 #if UNITY_EDITOR
             EditorSceneManager.MarkSceneDirty(gameObject.scene);
 #endif
@@ -479,4 +486,3 @@ namespace Map.Generation
         }
     }
 }
-#endif
