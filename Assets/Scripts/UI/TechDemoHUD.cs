@@ -4,7 +4,7 @@ using Unity.Entities;
 using System.Collections.Generic;
 using System.Linq;
 
-namespace DefaultNamespace
+namespace UI
 {
     public class TechDemoHUD : MonoBehaviour
     {
