@@ -7,9 +7,9 @@ namespace Core.PathfindingAStar
 {
     public struct BinaryHeapNode
     {
-        public int2 Position;
-        public float ExpectedCost;
-        public float DistanceToGoal;
+        public readonly int2 Position;
+        public readonly float ExpectedCost;
+        public readonly float DistanceToGoal;
 
         public BinaryHeapNode(int2 position, float expectedCost, float distanceToGoal)
         {
@@ -26,13 +26,16 @@ namespace Core.PathfindingAStar
     [NativeContainerSupportsDeallocateOnJobCompletion]
     public unsafe struct NativeBinaryMinHeap : IDisposable
     {
-        [NativeDisableUnsafePtrRestriction] private BinaryHeapNode* buffer;
-        private Allocator allocator;
-        private int capacity;
-        private int length;
+        [NativeDisableUnsafePtrRestriction] private BinaryHeapNode* _buffer;
+        private Allocator _allocator;
+        private int _capacity;
+        private int _length;
         private int _padding;
 
-        public bool IsCreated => buffer != null;
+        public bool IsCreated
+        {
+            get => _buffer != null;
+        }
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
         private AtomicSafetyHandle m_Safety;
@@ -42,14 +45,16 @@ namespace Core.PathfindingAStar
         {
             if (allocator <= Allocator.None)
                 throw new ArgumentException("Allocator must be Temp, TempJob or Persistent", nameof(allocator));
+            if (capacity < 0)
+                throw new ArgumentOutOfRangeException(nameof(capacity), "Capacity must be >= 0");
 
-            this.allocator = allocator;
-            this.capacity = capacity;
-            this.length = 0;
+            _allocator = allocator;
+            _capacity = capacity;
+            _length = 0;
             _padding = 0;
             
             var size = (long)UnsafeUtility.SizeOf<BinaryHeapNode>() * capacity;
-            buffer = (BinaryHeapNode*)UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<BinaryHeapNode>(), allocator);
+            _buffer = (BinaryHeapNode*)UnsafeUtility.Malloc(size, UnsafeUtility.AlignOf<BinaryHeapNode>(), allocator);
 
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             m_Safety = AtomicSafetyHandle.Create();
@@ -60,21 +65,21 @@ namespace Core.PathfindingAStar
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-            if (length >= capacity) throw new IndexOutOfRangeException("Heap Capacity Reached");
+            if (_length >= _capacity) throw new IndexOutOfRangeException("Heap Capacity Reached");
 #endif
-            int idx = length;
-            buffer[idx] = node;
-            length++;
+            int idx = _length;
+            _buffer[idx] = node;
+            _length++;
 
             // Sift Up
             while (idx > 0)
             {
                 int parent = (idx - 1) / 2;
-                if (buffer[idx].ExpectedCost >= buffer[parent].ExpectedCost) break;
+                if (_buffer[idx].ExpectedCost >= _buffer[parent].ExpectedCost) break;
 
-                var temp = buffer[idx];
-                buffer[idx] = buffer[parent];
-                buffer[parent] = temp;
+                var temp = _buffer[idx];
+                _buffer[idx] = _buffer[parent];
+                _buffer[parent] = temp;
                 idx = parent;
             }
         }
@@ -83,14 +88,14 @@ namespace Core.PathfindingAStar
         {
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
-            if (length <= 0) throw new IndexOutOfRangeException("Heap is empty");
+            if (_length <= 0) throw new IndexOutOfRangeException("Heap is empty");
 #endif
-            BinaryHeapNode result = buffer[0];
-            length--;
+            BinaryHeapNode result = _buffer[0];
+            _length--;
 
-            if (length > 0)
+            if (_length > 0)
             {
-                buffer[0] = buffer[length];
+                _buffer[0] = _buffer[_length];
                 int idx = 0;
 
                 // Sift Down
@@ -99,19 +104,19 @@ namespace Core.PathfindingAStar
                     int left = idx * 2 + 1;
                     int right = idx * 2 + 2;
                     
-                    if (left >= length) break;
+                    if (left >= _length) break;
 
                     int smallest = left;
-                    if (right < length)
+                    if (right < _length)
                     {
-                        smallest = math.select(left, right, buffer[right].ExpectedCost < buffer[left].ExpectedCost);
+                        smallest = math.select(left, right, _buffer[right].ExpectedCost < _buffer[left].ExpectedCost);
                     }
 
-                    if (buffer[smallest].ExpectedCost >= buffer[idx].ExpectedCost) break;
+                    if (_buffer[smallest].ExpectedCost >= _buffer[idx].ExpectedCost) break;
 
-                    var temp = buffer[idx];
-                    buffer[idx] = buffer[smallest];
-                    buffer[smallest] = temp;
+                    var temp = _buffer[idx];
+                    _buffer[idx] = _buffer[smallest];
+                    _buffer[smallest] = temp;
                     idx = smallest;
                 }
             }
@@ -123,7 +128,7 @@ namespace Core.PathfindingAStar
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckWriteAndThrow(m_Safety);
 #endif
-            length = 0;
+            _length = 0;
         }
 
         public bool HasNext()
@@ -131,17 +136,17 @@ namespace Core.PathfindingAStar
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
             AtomicSafetyHandle.CheckReadAndThrow(m_Safety);
 #endif
-            return length > 0;
+            return _length > 0;
         }
 
         public NativeBinaryMinHeap Slice(int start, int sliceLength)
         {
             return new NativeBinaryMinHeap
             {
-                buffer = this.buffer + start,
-                capacity = sliceLength,
-                length = 0,
-                allocator = Allocator.None,
+                _buffer = _buffer + start,
+                _capacity = sliceLength,
+                _length = 0,
+                _allocator = Allocator.None,
 #if ENABLE_UNITY_COLLECTIONS_CHECKS
                 m_Safety = m_Safety
 #endif
@@ -154,15 +159,15 @@ namespace Core.PathfindingAStar
             AtomicSafetyHandle.Release(m_Safety);
 #endif
 
-            if (!UnsafeUtility.IsValidAllocator(allocator))
+            if (!UnsafeUtility.IsValidAllocator(_allocator))
             {
                 return;
             }
 
-            UnsafeUtility.Free(buffer, allocator);
-            buffer = null;
-            capacity = 0;
-            length = 0;
+            UnsafeUtility.Free(_buffer, _allocator);
+            _buffer = null;
+            _capacity = 0;
+            _length = 0;
         }
     }
 }
