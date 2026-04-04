@@ -74,7 +74,7 @@ This is a performance-first navigation engine built strictly on the **Unity DOTS
 * **Real-time Metrics**: Maintaining ~30-40+ FPS with 100,000 active agents on Apple M1 Pro (including Editor overhead).
 
 ### Current Tech Stack
-* **Engine**: Unity 6000.2.7f+
+* **Engine**: Unity 6000.4.1f1
 * **Packages**: Entities (ECS), Burst, Mathematics
 
 ---
