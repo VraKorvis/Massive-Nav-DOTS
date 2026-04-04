@@ -9,7 +9,7 @@ using Unity.Transforms;
 namespace Core.Gameplay
 {
     [UpdateInGroup(typeof(InitializationSystemGroup))]
-    [UpdateAfter(typeof(ClickClassificationSystem))]
+    [UpdateAfter(typeof(ClickDispatchSystem))]
     [BurstCompile]
     public partial struct MoveToCommandSystem : ISystem
     {

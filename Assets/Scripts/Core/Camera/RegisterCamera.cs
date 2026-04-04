@@ -1,3 +1,4 @@
+using System;
 using Unity.Entities;
 using UnityEngine;
 
@@ -5,6 +6,15 @@ namespace Core.Camera
 {
     public class RegisterCamera : MonoBehaviour
     {
+
+        public float Yaw = 0f;
+        public float Pitch =  45f;
+        public float Distance = 25f;
+        public float MinDistance = 6f;
+        public float MaxDistance = 80f;
+        public float OrbitSpeed = 0.35f;
+        public float ZoomSpeed = 4f;
+        
         void Start()
         {
             var world = World.DefaultGameObjectInjectionWorld;
@@ -14,7 +24,18 @@ namespace Core.Camera
         
             entityManager.AddComponentData(cameraEntity, new MainCameraTag 
             { 
-                CameraTransform = this.transform 
+                CameraTransform = transform 
+            });
+            
+            entityManager.AddComponentData(cameraEntity, new CameraOrbitSettings 
+            { 
+                Yaw = Yaw,
+                Pitch = Pitch,
+                Distance = Distance,
+                MinDistance = MinDistance,
+                MaxDistance = MaxDistance,
+                OrbitSpeed = OrbitSpeed,
+                ZoomSpeed = ZoomSpeed 
             });
         }
     }

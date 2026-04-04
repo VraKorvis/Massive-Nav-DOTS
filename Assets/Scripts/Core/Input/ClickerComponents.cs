@@ -4,15 +4,9 @@ using Unity.Mathematics;
 
 namespace Core.Input
 {
-    public struct ClickEntry
-    {
-        public float3 WorldPosition;
-        public int MouseButton;
-    }
-    
     public struct ClickEventQueue : IComponentData
     {
-        public NativeQueue<ClickEntry> Queue;
+        public NativeQueue<float3> Queue;
     }
     
     public struct ClickEntityTag : IComponentData { }
