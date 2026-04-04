@@ -76,7 +76,7 @@ MonoBehaviour:
     RenderPassEvent: 250
     WorldSize: {x: 200, y: 200}
     WorldOffset: {x: 0, y: 0, z: 0}
-    DefaultNormalizeScale: 0.2
+    DefaultNormalizeScale: 0.4
     BlurRadius: 3
 --- !u!114 &7833122117494664109
 MonoBehaviour:
