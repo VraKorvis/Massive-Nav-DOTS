@@ -51,9 +51,10 @@ namespace Core.Input
             var frame = new RawInputFrame();
 
             bool clickedThisFrame = _actions.Player.Click.WasPressedThisFrame();
+            bool leftHeld         = mouse.leftButton.isPressed;
             bool isBlocked        = SystemAPI.GetSingleton<InputBlockStatus>().IsBlocked;
 
-            if (clickedThisFrame && !isBlocked)
+            if ((clickedThisFrame || leftHeld) && !mouse.rightButton.isPressed && !isBlocked)
             {
                 Vector2 screenPos = _actions.Player.Point.ReadValue<Vector2>();
                 Ray ray = _camera.ScreenPointToRay(screenPos);

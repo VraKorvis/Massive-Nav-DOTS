@@ -26,7 +26,7 @@ namespace Core.Camera
 
             if (input.RightHeld)
             {
-                orbit.Yaw += input.OrbitDelta.x * orbit.OrbitSpeed;
+                orbit.Yaw -= input.OrbitDelta.x * orbit.OrbitSpeed;
                 orbit.Yaw %= 360f;
             }
 
