@@ -88,13 +88,13 @@ MonoBehaviour:
   InflationMultiplier: 1
   InflationRadius: 1
   WallAvoidanceRange: 1.2
-  Seed: 123
+  Seed: 130
   GrassPrefabs:
   - {fileID: 8574628723207334215, guid: eeeb337c67643fc4780edd18d903eca0, type: 3}
   - {fileID: 3881550791890371892, guid: e8af8b43000608d43a0f2f15be139817, type: 3}
   - {fileID: 177019065467276010, guid: ff8a36ccacfbbd44f8136851c1d35c98, type: 3}
-  GrassNoiseScale: 0.5
-  GrassThreshold: 0.153
+  GrassNoiseScale: 0.6
+  GrassThreshold: 0.3
   AlignGrassToNormal: 1
   GroundLayer:
     serializedVersion: 2

@@ -19,22 +19,35 @@ namespace UI
         private EntityManager _entityManager;
         private EntityQuery _navSettingsQuery;
         private EntityQuery _cullingSettingsQuery;
-        
-        private void Awake()
+        private bool _isInitialized;
+
+        private delegate void RefAction<T>(ref T provider);
+
+        private void Update()
         {
-            if (World.DefaultGameObjectInjectionWorld != null)
+            if (!_isInitialized)
             {
-                _entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
-                
-                _navSettingsQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<NavigationSettings>());
-                _cullingSettingsQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<CullingSettings>());
+                InitializeEcs();
             }
         }
-        
+
+        private void InitializeEcs()
+        {
+            if (World.DefaultGameObjectInjectionWorld == null) return;
+
+            _entityManager = World.DefaultGameObjectInjectionWorld.EntityManager;
+            _navSettingsQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<NavigationSettings>());
+            _cullingSettingsQuery = _entityManager.CreateEntityQuery(ComponentType.ReadWrite<CullingSettings>());
+
+            if (!_navSettingsQuery.IsEmpty && !_cullingSettingsQuery.IsEmpty)
+            {
+                RefreshUI();
+                _isInitialized = true;
+            }
+        }
+
         private void OnEnable()
         {
-            RefreshUI();
-
             SeparationRadiusSlider.onValueChanged.AddListener(HandleSeparationRadiusChanged);
             SeparationWeightSlider.onValueChanged.AddListener(HandleSeparationWeightChanged);
             SpatialCellSizeSlider.onValueChanged.AddListener(HandleSpatialCellSizeChanged);
@@ -45,6 +58,8 @@ namespace UI
                 
             if (Enabled != null)
                 Enabled.onValueChanged.AddListener(HandleEnabledChanged);
+
+            if (_isInitialized) RefreshUI();
         }
 
         private void OnDisable()
@@ -60,10 +75,10 @@ namespace UI
             if (Enabled != null)
                 Enabled.onValueChanged.RemoveListener(HandleEnabledChanged);
         }
-        
-        public void RefreshUI()
+
+        private void RefreshUI()
         {
-            if (_entityManager == default) return;
+            if (_entityManager == default || !_entityManager.World.IsCreated) return;
 
             if (TryGetNavSettings(out NavigationSettings navSettings))
             {
@@ -81,21 +96,21 @@ namespace UI
                     Enabled.SetIsOnWithoutNotify(cullingSettings.EnableCulling); 
             }
         }
-        
+
         #region Handlers
 
-        private void HandleSeparationRadiusChanged(float value) => UpdateNavSettings(s => s.SeparationRadius = value);
-        private void HandleSeparationWeightChanged(float value) => UpdateNavSettings(s => s.SeparationWeight = value);
-        private void HandleSpatialCellSizeChanged(float value) => UpdateNavSettings(s => s.SpatialCellSize = value);
-        private void HandleTargetJitterChanged(float value) => UpdateNavSettings(s => s.TargetJitterRange = (int)value);
-        private void HandleDensityChanged(float value) => UpdateCullingSettings(s => s.MaxAntsPerCell = (int)value);
-        private void HandleEnabledChanged(bool value) => UpdateCullingSettings(s => s.EnableCulling = value);
+        private void HandleSeparationRadiusChanged(float value) => UpdateNavSettings((ref NavigationSettings s) => s.SeparationRadius = value);
+        private void HandleSeparationWeightChanged(float value) => UpdateNavSettings((ref NavigationSettings s) => s.SeparationWeight = value);
+        private void HandleSpatialCellSizeChanged(float value) => UpdateNavSettings((ref NavigationSettings s) => s.SpatialCellSize = value);
+        private void HandleTargetJitterChanged(float value) => UpdateNavSettings((ref NavigationSettings s) => s.TargetJitterRange = (int)value);
+        private void HandleDensityChanged(float value) => UpdateCullingSettings((ref CullingSettings s) => s.MaxAntsPerCell = (int)value);
+        private void HandleEnabledChanged(bool value) => UpdateCullingSettings((ref CullingSettings s) => s.EnableCulling = value);
 
         #endregion
-        
+
         private bool TryGetNavSettings(out NavigationSettings settings)
         {
-            if (!_navSettingsQuery.IsEmpty)
+            if (_navSettingsQuery.HasSingleton<NavigationSettings>())
             {
                 settings = _navSettingsQuery.GetSingleton<NavigationSettings>();
                 return true;
@@ -103,10 +118,10 @@ namespace UI
             settings = default;
             return false;
         }
-        
+
         private bool TryGetCullingSettings(out CullingSettings settings)
         {
-            if (!_cullingSettingsQuery.IsEmpty)
+            if (_cullingSettingsQuery.HasSingleton<CullingSettings>())
             {
                 settings = _cullingSettingsQuery.GetSingleton<CullingSettings>();
                 return true;
@@ -115,21 +130,21 @@ namespace UI
             return false;
         }
 
-        private void UpdateNavSettings(System.Action<NavigationSettings> updateAction)
+        private void UpdateNavSettings(RefAction<NavigationSettings> updateAction)
         {
-            if (_navSettingsQuery.IsEmpty) return;
+            if (!_navSettingsQuery.HasSingleton<NavigationSettings>()) return;
 
             var settings = _navSettingsQuery.GetSingleton<NavigationSettings>();
-            updateAction(settings);
+            updateAction(ref settings);
             _navSettingsQuery.SetSingleton(settings);
         }
 
-        private void UpdateCullingSettings(System.Action<CullingSettings> updateAction)
+        private void UpdateCullingSettings(RefAction<CullingSettings> updateAction)
         {
-            if (_cullingSettingsQuery.IsEmpty) return;
+            if (!_cullingSettingsQuery.HasSingleton<CullingSettings>()) return;
 
             var settings = _cullingSettingsQuery.GetSingleton<CullingSettings>();
-            updateAction(settings);
+            updateAction(ref settings);
             _cullingSettingsQuery.SetSingleton(settings);
         }
     }

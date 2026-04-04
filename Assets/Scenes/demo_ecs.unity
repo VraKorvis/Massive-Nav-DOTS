@@ -17,7 +17,7 @@ RenderSettings:
   m_Fog: 0
   m_FogColor: {r: 0.84549654, g: 0.9433962, b: 0.9433962, a: 1}
   m_FogMode: 3
-  m_FogDensity: 0
+  m_FogDensity: 0.002
   m_LinearFogStart: 0
   m_LinearFogEnd: 300
   m_AmbientSkyColor: {r: 0.2578616, g: 0.2578616, b: 0.2578616, a: 1}
@@ -714,7 +714,15 @@ PrefabInstance:
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 3057141531117105954, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
+      propertyPath: m_AnchorMax.x
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3057141531117105954, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
       propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 3057141531117105954, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
+      propertyPath: m_AnchorMin.x
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 4325619972123937228, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
@@ -779,6 +787,10 @@ PrefabInstance:
       objectReference: {fileID: 0}
     - target: {fileID: 5867182694068423409, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
       propertyPath: m_AnchorMax.y
+      value: 0
+      objectReference: {fileID: 0}
+    - target: {fileID: 5956664874214499489, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}
+      propertyPath: m_AnchorMax.x
       value: 0
       objectReference: {fileID: 0}
     - target: {fileID: 5956664874214499489, guid: 6daa784a3687d4db78a1d528f7dc1b8a, type: 3}

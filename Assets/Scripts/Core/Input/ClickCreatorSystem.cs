@@ -16,12 +16,15 @@ namespace Core.Input
             _inputActions = new PlayerInputSystemActions();
             _inputActions.Player.Enable();
             _mainCamera = UnityEngine.Camera.main;
+            RequireForUpdate<InputBlockStatus>();
         }
 
         protected override void OnUpdate()
         {
             if (_mainCamera == null) _mainCamera = UnityEngine.Camera.main;
             if (_mainCamera == null || !_inputActions.Player.Click.WasPressedThisFrame()) return;
+            
+            if (SystemAPI.GetSingleton<InputBlockStatus>().IsBlocked) return;
             
             if (UnityEngine.InputSystem.Pointer.current == null) return;
             
