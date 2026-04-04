@@ -110,7 +110,7 @@ namespace Core.PathfindingAStar
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true, OptimizeFor = OptimizeFor.Performance)]
         public partial struct PathMoveJob : IJobEntity
         {
             public float DeltaTime;
@@ -236,8 +236,7 @@ namespace Core.PathfindingAStar
                 transform.Position = nextPos;
             }
         }
-
-
+        
         [BurstCompile]
         public void OnDestroy(ref SystemState state)
         {

@@ -267,20 +267,11 @@ namespace Core.PathfindingAStar
                 MaxToCollect = maxRequestsPerFrame * 2
             }.Schedule(collectByBucketJobHandle);
 
-            // var sortableList = new NativeList<PathRequestCandidate>(totalWaiting, Allocator.TempJob);
-            //
-            // var collectJobHandle = new CollectRequestsJob
-            // {
-            //     SortableList = sortableList.AsParallelWriter()
-            // }.ScheduleParallel(_pathRequestQuery, state.Dependency);
-
             int physicalLimit = (_costSoFar.Length / _currentBufferSize) - vipOffset;
             int agentsToProcess = math.min(totalWaiting, math.min(maxPerFrame, physicalLimit));
             var processingEntities = new NativeArray<Entity>(agentsToProcess, Allocator.TempJob);
             var pathArray = new NativeArray<PFRequestAgent>(agentsToProcess, Allocator.TempJob);
-
-            // var sortHandle = sortableList.SortJob(new RequestComparer()).Schedule(collectJobHandle);
-
+            
             var prepareHandle = new PrepareAndMarkJob
             {
                 GridBlob = gridBlobRef,
@@ -330,7 +321,6 @@ namespace Core.PathfindingAStar
 
             processingEntities.Dispose(state.Dependency);
             pathArray.Dispose(state.Dependency);
-            // sortableList.Dispose(state.Dependency);
             finalSortableList.Dispose(state.Dependency);
             state.Dependency = stream.Dispose(state.Dependency);
         }
@@ -488,28 +478,6 @@ namespace Core.PathfindingAStar
         }
 
         [BurstCompile]
-        public partial struct CollectRequestsJob : IJobEntity
-        {
-            [WriteOnly]
-            [NativeDisableContainerSafetyRestriction]
-            public NativeList<PathRequestCandidate>.ParallelWriter SortableList;
-
-            void Execute(Entity entity, in PFRequestMetadata metadata, in PFAgentState state)
-            {
-                if ((state.Flags & (byte)PFAgentStatus.Find) != 0)
-                {
-                    SortableList.AddNoResize(new PathRequestCandidate
-                    {
-                        Entity = entity,
-                        Weight = metadata.Weight,
-                        RequestTime = metadata.RequestTime,
-                        Priority = metadata.Priority
-                    });
-                }
-            }
-        }
-
-        [BurstCompile]
         private struct PrepareAndMarkJob : IJobParallelFor
         {
             public float CurrentTime;
@@ -606,7 +574,7 @@ namespace Core.PathfindingAStar
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true)]
         private struct FindPathAStarJob : IJobParallelFor
         {
             private static readonly ProfilerMarker Marker = new ProfilerMarker("AStar_SingleAgent");

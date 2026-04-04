@@ -35,7 +35,7 @@ namespace Core.Spatial
 
             int count = _agentQuery.CalculateEntityCount();
             if (count == 0) return;
-            
+
             if (!spatialData.ValueRO.MortonA.IsCreated || spatialData.ValueRO.MortonA.Length < count)
             {
                 var gridBlob = SystemAPI.GetSingleton<GridBlobReference>().Value;
@@ -50,17 +50,17 @@ namespace Core.Spatial
                 EnsureCapacity(ref spatialData.ValueRW.RadixTempBuffer, count, default);
                 EnsureCapacity(ref spatialData.ValueRW.PositionCacheA, count, default);
                 EnsureCapacity(ref spatialData.ValueRW.PositionCacheB, count, default);
-                
+
                 EnsureCapacity(ref spatialData.ValueRW.EntitiesCacheA, count, default);
                 EnsureCapacity(ref spatialData.ValueRW.EntitiesCacheB, count, default);
-                
+
                 EnsureCapacity(ref spatialData.ValueRW.CellStartsA, gridSizMorton, default);
                 EnsureCapacity(ref spatialData.ValueRW.CellStartsB, gridSizMorton, default);
-                
+
                 EnsureCapacity(ref spatialData.ValueRW.CellCountsA, gridSizMorton, default);
                 EnsureCapacity(ref spatialData.ValueRW.CellCountsB, gridSizMorton, default);
             }
-            
+
             var isBufferA = spatialData.ValueRO.IsBufferA;
             var nextPositionCache = isBufferA ? spatialData.ValueRO.PositionCacheB : spatialData.ValueRO.PositionCacheA;
             var nextEntitiesCache = isBufferA ? spatialData.ValueRO.EntitiesCacheB : spatialData.ValueRO.EntitiesCacheA;
@@ -74,9 +74,9 @@ namespace Core.Spatial
                 Positions = nextPositionCache,
                 AgentQueryEntities = nextEntitiesCache
             }.ScheduleParallel(_agentQuery, state.Dependency);
-            
+
             var nextHandle = isBufferA ? spatialData.ValueRO.HandleB : spatialData.ValueRO.HandleA;
-   
+
             if (nextHandle.IsCompleted)
             {
                 var prepareDeps = JobHandle.CombineDependencies(copyJobHandle, state.Dependency);
@@ -122,9 +122,11 @@ namespace Core.Spatial
         [BurstCompile]
         private partial struct CopyPositionsParallelJob : IJobEntity
         {
-            [WriteOnly] [NativeDisableContainerSafetyRestriction]
+            [WriteOnly]
+            [NativeDisableContainerSafetyRestriction]
             public NativeArray<float3> Positions;
-            [WriteOnly] [NativeDisableContainerSafetyRestriction]
+            [WriteOnly]
+            [NativeDisableContainerSafetyRestriction]
             public NativeArray<Entity> AgentQueryEntities;
 
             private void Execute(Entity entity, [EntityIndexInQuery] int index, in LocalTransform transform)
@@ -134,7 +136,7 @@ namespace Core.Spatial
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true, OptimizeFor = OptimizeFor.Performance)]
         private struct MortonRadixSortJob : IJob
         {
             public NativeArray<MortonEntry> Data;
@@ -182,14 +184,14 @@ namespace Core.Spatial
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true, OptimizeFor = OptimizeFor.Performance)]
         struct BuildCellStartsJob : IJob
         {
             [ReadOnly]
             public NativeArray<MortonEntry> SortedEntries;
             public NativeArray<int> CellStarts;
             public NativeArray<int> CellCounts;
-        
+
             public void Execute()
             {
                 unsafe
@@ -197,19 +199,19 @@ namespace Core.Spatial
                     UnsafeUtility.MemSet(CellStarts.GetUnsafePtr(), 0xFF, (long)CellStarts.Length * sizeof(int));
                     UnsafeUtility.MemClear(CellCounts.GetUnsafePtr(), CellCounts.Length * sizeof(int));
                 }
-        
+
                 if (SortedEntries.Length == 0)
                     return;
-        
+
                 uint previousCellCode = SortedEntries[0].Key;
                 int startIndex = 0;
-        
+
                 for (int i = 0; i <= SortedEntries.Length; i++)
                 {
                     bool endOfCell =
                         i == SortedEntries.Length ||
                         SortedEntries[i].Key != previousCellCode;
-        
+
                     if (endOfCell)
                     {
                         if (previousCellCode < (uint)CellStarts.Length)
@@ -218,7 +220,7 @@ namespace Core.Spatial
                             CellStarts[keyIndex] = startIndex;
                             CellCounts[keyIndex] = i - startIndex;
                         }
-        
+
                         if (i < SortedEntries.Length)
                         {
                             previousCellCode = SortedEntries[i].Key;
@@ -229,7 +231,7 @@ namespace Core.Spatial
             }
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true, OptimizeFor = OptimizeFor.Performance)]
         private struct PrepareMortonJobForArray : IJobParallelFor
         {
             [ReadOnly]
@@ -272,7 +274,7 @@ namespace Core.Spatial
             if (SystemAPI.TryGetSingletonRW<SpatialPartitioningData>(out var data))
             {
                 JobHandle.CombineDependencies(data.ValueRO.HandleA, data.ValueRO.HandleB, state.Dependency).Complete();
-        
+
                 DisposeIfCreated(ref data.ValueRW.MortonA);
                 DisposeIfCreated(ref data.ValueRW.MortonB);
                 DisposeIfCreated(ref data.ValueRW.RadixTempBuffer);
@@ -286,7 +288,7 @@ namespace Core.Spatial
                 DisposeIfCreated(ref data.ValueRW.CellCountsB);
             }
         }
-        
+
         private void DisposeIfCreated<T>(ref NativeArray<T> array) where T : struct
         {
             if (array.IsCreated) array.Dispose();

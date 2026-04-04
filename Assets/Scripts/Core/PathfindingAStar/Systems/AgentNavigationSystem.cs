@@ -87,7 +87,7 @@ namespace Core.PathfindingAStar
             state.Dependency = pathMoveJobHandle;
         }
 
-        [BurstCompile]
+        [BurstCompile(CompileSynchronously = true, OptimizeFor = OptimizeFor.Performance)]
         private struct PathMovePBDJob : IJobChunk
         {
             public ComponentTypeHandle<LocalTransform> TransformHandle;
