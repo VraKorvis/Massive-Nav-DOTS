@@ -72,6 +72,9 @@ This is a performance-first navigation engine built strictly on the **Unity DOTS
 ### Performance & Optimization
 * **Massive-Scale Parallelism**: Fully Burst-compiled Job System (IJobEntity/IJobChunk) distributing load across all available CPU cores.
 * **Zero Managed Allocations**: The core simulation loop runs entirely on unmanaged memory using Native Containers, ensuring no GC spikes.
+* **Low-Level CPU Optimizations (SIMD & Branchless)**:
+    - **SIMD Vectorization**: Leverages Burst to generate high-performance SIMD instructions (SSE/AVX/NEON). Core mathematical operations for agent steering and PBD solvers are vectorized to process multiple entities per CPU cycle.
+    - **Branchless Logic**: Extensive use of `math.select` and bitwise operations (e.g., in A* Heap sift-down and PBD constraints) to eliminate branch prediction misses, keeping the CPU pipeline fully saturated.
 * **Efficient Memory Layout**: Optimized for cache locality to maximize CPU throughput.
   - Morton Encoding: Used for spatial data indexing to maximize L1/L2 cache hits during neighbor searches.
   - Double Buffering: Swap-buffer logic for Morton codes to prevent race conditions.

@@ -51,7 +51,7 @@ MonoBehaviour:
     zFailOperation: 0
   m_ShadowTransparentReceive: 1
   m_RenderingMode: 2
-  m_DepthPrimingMode: 0
+  m_DepthPrimingMode: 2
   m_CopyDepthMode: 0
   m_DepthAttachmentFormat: 0
   m_DepthTextureFormat: 0
@@ -76,8 +76,8 @@ MonoBehaviour:
     RenderPassEvent: 250
     WorldSize: {x: 200, y: 200}
     WorldOffset: {x: 0, y: 0, z: 0}
-    DefaultNormalizeScale: 0.4
-    BlurRadius: 3
+    DefaultNormalizeScale: 0.75
+    BlurRadius: 4
 --- !u!114 &7833122117494664109
 MonoBehaviour:
   m_ObjectHideFlags: 0
