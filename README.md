@@ -1,6 +1,10 @@
 # Massive-Nav-DOTS
-
-**High-performance massive-scale pathfinding core for Unity ECS.** Designed to handle **100,000+ agents** simultaneously using A*, Spatial Hashing, and PBD-based collision resolution. Optimized for Unity 6 and the Data-Oriented Technology Stack (DOTS).
+**High-performance massive-scale pathfinding core for Unity ECS.**
+**Key Performance Metrics:**
+* **Capacity:** 100,000 active agents.
+* **Performance:** 40-50 FPS (Standalone) on Mac M1 Pro.
+* **Throughput:** 2,000-5,000 full A* pathfinding updates per frame.
+* **Tech Stack:** Unity DOTS (ECS, Jobs, Burst), PBD Steering, Morton Codes with double buffering, GPU Resident Drawer.
 
 ---
 
@@ -71,7 +75,7 @@ This is a performance-first navigation engine built strictly on the **Unity DOTS
 * **Efficient Memory Layout**: Optimized for cache locality to maximize CPU throughput.
   - Morton Encoding: Used for spatial data indexing to maximize L1/L2 cache hits during neighbor searches.
   - Double Buffering: Swap-buffer logic for Morton codes to prevent race conditions.
-* **Real-time Metrics**: Maintaining ~30-40+ FPS with 100,000 active agents on Apple M1 Pro (including Editor overhead).
+* **Real-time Metrics**: Maintaining ~40-50+ FPS with 100,000 active agents on Apple M1 Pro (including Editor overhead).
 
 ### Current Tech Stack
 * **Engine**: Unity 6000.4.1f1
