@@ -3,6 +3,7 @@ using Unity.Entities;
 using Unity.Mathematics;
 using Unity.Transforms;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.InputSystem;
 
 namespace Core.Input
@@ -49,12 +50,15 @@ namespace Core.Input
             if (mouse == null) return;
 
             var frame = new RawInputFrame();
+            
+            bool isOverUI = EventSystem.current != null && 
+                EventSystem.current.IsPointerOverGameObject(-1);
 
             bool clickedThisFrame = _actions.Player.Click.WasPressedThisFrame();
             bool leftHeld         = mouse.leftButton.isPressed;
             bool isBlocked        = SystemAPI.GetSingleton<InputBlockStatus>().IsBlocked;
 
-            if ((clickedThisFrame || leftHeld) && !mouse.rightButton.isPressed && !isBlocked)
+            if ((clickedThisFrame || leftHeld) && !mouse.rightButton.isPressed && !isBlocked && !isOverUI)
             {
                 Vector2 screenPos = _actions.Player.Point.ReadValue<Vector2>();
                 Ray ray = _camera.ScreenPointToRay(screenPos);
