@@ -10,7 +10,7 @@
 
 ## 📺 Video Demo (100,000 Agents in Action)
 
-[![100k Agents](https://img.youtube.com/vi/T-0mthncdHc/hqdefault.jpg)](https://www.youtube.com/watch?v=T-0mthncdHc)
+[![100k Agents](https://img.youtube.com/vi/yrA99FONjIU/hqdefault.jpg)](https://youtu.be/yrA99FONjIU)
 
 *Click the image above to watch the performance stress test on YouTube.*
 
